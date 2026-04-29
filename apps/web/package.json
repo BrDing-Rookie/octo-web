@@ -52,6 +52,7 @@
     "@octo/contacts": "workspace:*",
     "@octo/datasource": "workspace:*",
     "@octo/login": "workspace:*",
+    "@dmwork/summary": "workspace:*",
     "@octo/todo": "workspace:*",
     "@douyinfe/semi-icons": "^2.93.0",
     "@douyinfe/semi-ui": "^2.93.0",
