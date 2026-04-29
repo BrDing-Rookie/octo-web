@@ -8,6 +8,7 @@ import  { BaseModule, WKApp } from '@octo/base';
 import  { LoginModule } from '@octo/login';
 import  { DataSourceModule } from '@octo/datasource';
 import {ContactsModule} from '@octo/contacts';
+import { TodoModule } from '@octo/todo';
 import { version as pkgVersion } from '../package.json';
 
 // VITE_API_URL 只填 origin（协议+域名+端口），不要带路径
@@ -51,6 +52,7 @@ WKApp.shared.registerModule(new BaseModule()); // 基础模块
 WKApp.shared.registerModule(new DataSourceModule()) // 数据源模块
 WKApp.shared.registerModule(new LoginModule()); // 登录模块
 WKApp.shared.registerModule(new ContactsModule()); // 联系模块
+WKApp.shared.registerModule(new TodoModule()); // Todo module
 
 WKApp.shared.startup() // app启动
 
