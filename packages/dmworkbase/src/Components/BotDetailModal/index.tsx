@@ -1,5 +1,6 @@
 import React, { Component } from "react";
-import { Button, Spin, Toast, Input } from "@douyinfe/semi-ui";
+import { Button, Spin, Toast, Input, TextArea } from "@douyinfe/semi-ui";
+import axios from "axios";
 import WKModal from "../WKModal";
 import { Channel, ChannelTypePerson, WKSDK } from "wukongimjssdk";
 import WKApp from "../../App";
@@ -20,15 +21,21 @@ interface BotDetailModalState {
     username: string;
     description: string;
     creatorName: string;
+    creatorUid: string;
     botCommands: string;
     isFriend: boolean;
     applying: boolean;
     showApplyInput: boolean;
     applyRemark: string;
+    uploadingAvatar: boolean;
+    editingDescription: boolean;
+    descriptionDraft: string;
+    savingDescription: boolean;
 }
 
 export default class BotDetailModal extends Component<BotDetailModalProps, BotDetailModalState> {
     private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    private $fileInput: HTMLInputElement | null = null;
 
     state: BotDetailModalState = {
         loading: true,
@@ -36,11 +43,16 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
         username: "",
         description: "",
         creatorName: "",
+        creatorUid: "",
         botCommands: "",
         isFriend: false,
         applying: false,
         showApplyInput: false,
         applyRemark: "",
+        uploadingAvatar: false,
+        editingDescription: false,
+        descriptionDraft: "",
+        savingDescription: false,
     };
 
     componentDidMount() {
@@ -61,39 +73,81 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
     }
 
     loadBotInfo = async () => {
-        const { uid } = this.props;
-        if (!uid) return;
+        const requestedUid = this.props.uid;
+        if (!requestedUid) return;
 
-        this.setState({ loading: true });
+        // Reset all bot-specific state at the start of each load so that
+        // a new uid (e.g. when the modal instance is reused by BotStore /
+        // GlobalSearch / Subscribers) cannot see leftover state from the
+        // previously displayed bot.
+        this.setState({
+            loading: true,
+            name: "",
+            username: "",
+            description: "",
+            creatorName: "",
+            creatorUid: "",
+            botCommands: "",
+            isFriend: false,
+            applying: false,
+            showApplyInput: false,
+            applyRemark: "",
+            uploadingAvatar: false,
+            editingDescription: false,
+            descriptionDraft: "",
+            savingDescription: false,
+        });
+
+        const isStale = () => this.props.uid !== requestedUid;
+
         try {
             // 用 user detail API 获取完整信息（包含 follow）
-            const data = await WKApp.apiClient.get(`users/${uid}`);
+            const data = await WKApp.apiClient.get(`users/${requestedUid}`);
+            if (isStale()) return;
             this.setState({
                 loading: false,
-                name: data.name || uid,
-                username: data.username || uid,
+                name: data.name || requestedUid,
+                username: data.username || requestedUid,
                 description: data.bot_description || "暂无简介",
                 creatorName: data.bot_creator_name || "",
+                creatorUid: data.bot_creator_uid || "",
                 botCommands: data.bot_commands || "",
                 isFriend: data.follow === 1,
+                editingDescription: false,
             });
         } catch {
             // fallback to channel info
             try {
                 const channelInfo = await WKSDK.shared().channelManager.fetchChannelInfo(
-                    new Channel(uid, ChannelTypePerson)
+                    new Channel(requestedUid, ChannelTypePerson)
                 );
+                if (isStale()) return;
                 this.setState({
                     loading: false,
-                    name: channelInfo?.title || uid,
-                    username: uid,
+                    name: channelInfo?.title || requestedUid,
+                    username: requestedUid,
                     description: channelInfo?.orgData?.bot_description || "暂无简介",
                     creatorName: channelInfo?.orgData?.bot_creator_name || "",
+                    creatorUid: channelInfo?.orgData?.bot_creator_uid || "",
                     botCommands: channelInfo?.orgData?.bot_commands || "",
                     isFriend: channelInfo?.orgData?.follow === 1,
+                    editingDescription: false,
                 });
             } catch {
-                this.setState({ loading: false, name: uid });
+                if (isStale()) return;
+                // Keep the reset done above (creatorUid="") so isOwner()
+                // can never return true for a bot we failed to load.
+                this.setState({
+                    loading: false,
+                    name: requestedUid,
+                    username: requestedUid,
+                    description: "暂无简介",
+                    creatorName: "",
+                    creatorUid: "",
+                    botCommands: "",
+                    isFriend: false,
+                    editingDescription: false,
+                });
             }
         }
     };
@@ -103,6 +157,97 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
         // WuKongIM DM 只认裸 uid
         onChat(new Channel(uid, ChannelTypePerson));
         onClose();
+    };
+
+    // === Owner 头像编辑 ===
+    handleAvatarClick = () => {
+        if (!this.isOwner() || this.state.uploadingAvatar) return;
+        this.$fileInput?.click();
+    };
+
+    handleAvatarKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            this.handleAvatarClick();
+        }
+    };
+
+    handleEditDescriptionKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            this.handleStartEditDescription();
+        }
+    };
+
+    handleAvatarInputClick = (event: React.MouseEvent<HTMLInputElement>) => {
+        // 允许连续选中同一文件
+        (event.target as HTMLInputElement).value = "";
+    };
+
+    handleAvatarFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        const file = files[0];
+        const { uid } = this.props;
+        const param = new FormData();
+        param.append("file", file);
+        this.setState({ uploadingAvatar: true });
+        try {
+            await axios.post(`users/${uid}/avatar`, param, {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                    "token": WKApp.loginInfo.token || "",
+                },
+            });
+            WKApp.shared.changeChannelAvatarTag(new Channel(uid, ChannelTypePerson));
+            // 触发 channelInfoListener，通知其他组件刷新头像
+            WKSDK.shared().channelManager.fetchChannelInfo(new Channel(uid, ChannelTypePerson));
+            Toast.success("头像已更新");
+            this.forceUpdate();
+        } catch (err) {
+            Toast.error("头像上传失败，请重试");
+        } finally {
+            this.setState({ uploadingAvatar: false });
+        }
+    };
+
+    // === Owner 简介编辑 ===
+    handleStartEditDescription = () => {
+        if (!this.isOwner()) return;
+        const { description } = this.state;
+        const raw = description === "暂无简介" ? "" : description.replace(/\*\*/g, "");
+        this.setState({ editingDescription: true, descriptionDraft: raw });
+    };
+
+    handleCancelEditDescription = () => {
+        this.setState({ editingDescription: false, descriptionDraft: "" });
+    };
+
+    handleSaveDescription = async () => {
+        const { uid } = this.props;
+        const { descriptionDraft } = this.state;
+        this.setState({ savingDescription: true });
+        try {
+            await WKApp.apiClient.put(`robot/${uid}/description`, {
+                description: descriptionDraft,
+            });
+            Toast.success("简介已更新");
+            this.setState({
+                description: descriptionDraft || "暂无简介",
+                editingDescription: false,
+                descriptionDraft: "",
+            });
+        } catch {
+            Toast.error("简介更新失败");
+        } finally {
+            this.setState({ savingDescription: false });
+        }
+    };
+
+    isOwner = () => {
+        const { creatorUid } = this.state;
+        const loginUid = WKApp.loginInfo.uid;
+        return !!creatorUid && !!loginUid && creatorUid === loginUid;
     };
 
     handleShowApply = () => {
@@ -136,7 +281,23 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
 
     render() {
         const { visible, onClose, uid } = this.props;
-        const { loading, name, username, description, creatorName, botCommands, isFriend, applying, showApplyInput, applyRemark } = this.state;
+        const {
+            loading,
+            name,
+            username,
+            description,
+            creatorName,
+            botCommands,
+            isFriend,
+            applying,
+            showApplyInput,
+            applyRemark,
+            uploadingAvatar,
+            editingDescription,
+            descriptionDraft,
+            savingDescription,
+        } = this.state;
+        const isOwner = this.isOwner();
 
         let commands: { cmd: string; remark: string }[] = [];
         try {
@@ -157,15 +318,90 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
                 ) : (
                     <div className="wk-bot-detail-content">
                         <div className="wk-bot-detail-header">
-                            <WKAvatar channel={new Channel(uid, ChannelTypePerson)} size={64} />
+                            {isOwner ? (
+                                <div
+                                    className="wk-bot-detail-avatar wk-bot-detail-avatar--owner"
+                                    onClick={this.handleAvatarClick}
+                                    onKeyDown={this.handleAvatarKeyDown}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label="更换头像"
+                                >
+                                    <WKAvatar channel={new Channel(uid, ChannelTypePerson)} size={64} />
+                                    <div className="wk-bot-detail-avatar-overlay">
+                                        <span role="img" aria-label="更换头像">📷</span>
+                                    </div>
+                                    {uploadingAvatar && (
+                                        <div className="wk-bot-detail-avatar-loading">
+                                            <Spin />
+                                        </div>
+                                    )}
+                                    <input
+                                        ref={(ref) => { this.$fileInput = ref; }}
+                                        type="file"
+                                        accept="image/*"
+                                        multiple={false}
+                                        style={{ display: "none" }}
+                                        onClick={this.handleAvatarInputClick}
+                                        onChange={this.handleAvatarFileChange}
+                                    />
+                                </div>
+                            ) : (
+                                <WKAvatar channel={new Channel(uid, ChannelTypePerson)} size={64} />
+                            )}
                             <div className="wk-bot-detail-name">
                                 {name.replace(/\*\*/g, '')} <AiBadge />
                             </div>
                             <div className="wk-bot-detail-id">@{username}</div>
                         </div>
                         <div className="wk-bot-detail-desc">
-                            <div className="wk-bot-detail-label">简介</div>
-                            <div>{description.replace(/\*\*/g, '')}</div>
+                            <div className="wk-bot-detail-label">
+                                简介
+                                {isOwner && !editingDescription && (
+                                    <span
+                                        className="wk-bot-detail-edit-icon"
+                                        onClick={this.handleStartEditDescription}
+                                        onKeyDown={this.handleEditDescriptionKeyDown}
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-label="编辑简介"
+                                    >
+                                        ✏️
+                                    </span>
+                                )}
+                            </div>
+                            {isOwner && editingDescription ? (
+                                <div>
+                                    <TextArea
+                                        value={descriptionDraft}
+                                        onChange={(v) => this.setState({ descriptionDraft: v })}
+                                        placeholder="请输入简介"
+                                        maxCount={200}
+                                        autosize={{ minRows: 3, maxRows: 6 }}
+                                        style={{ marginBottom: 8 }}
+                                    />
+                                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                                        <Button
+                                            size="small"
+                                            onClick={this.handleCancelEditDescription}
+                                            disabled={savingDescription}
+                                        >
+                                            取消
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            theme="solid"
+                                            type="primary"
+                                            loading={savingDescription}
+                                            onClick={this.handleSaveDescription}
+                                        >
+                                            保存
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>{description.replace(/\*\*/g, '')}</div>
+                            )}
                         </div>
                         {creatorName && (
                             <div className="wk-bot-detail-desc">

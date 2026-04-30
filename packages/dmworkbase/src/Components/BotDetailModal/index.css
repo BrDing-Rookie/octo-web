@@ -57,3 +57,66 @@
 .wk-bot-detail-cmd-desc {
     color: #888;
 }
+
+/* Owner 头像编辑：hover 显示 📷 遮罩 */
+.wk-bot-detail-avatar {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+}
+.wk-bot-detail-avatar--owner {
+    cursor: pointer;
+}
+.wk-bot-detail-avatar-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s ease-in-out;
+    pointer-events: none;
+}
+.wk-bot-detail-avatar--owner:hover .wk-bot-detail-avatar-overlay,
+.wk-bot-detail-avatar--owner:focus-visible .wk-bot-detail-avatar-overlay {
+    opacity: 1;
+}
+/* keyboard focus ring: hover-only 📷 overlay 在键盘聚焦时也要可见 */
+.wk-bot-detail-avatar--owner:focus-visible {
+    outline: 2px solid var(--wk-border-glow);
+    outline-offset: 2px;
+    border-radius: 50%;
+}
+.wk-bot-detail-avatar-loading {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Owner 简介编辑：hover label 显示 ✏️ */
+.wk-bot-detail-edit-icon {
+    margin-left: 6px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease-in-out;
+    font-size: 12px;
+    user-select: none;
+}
+.wk-bot-detail-desc:hover .wk-bot-detail-edit-icon,
+.wk-bot-detail-edit-icon:focus-visible {
+    opacity: 1;
+}
+/* keyboard focus ring: 默认 opacity:0 的 ✏️ 在键盘聚焦时要看得见 */
+.wk-bot-detail-edit-icon:focus-visible {
+    outline: 2px solid var(--wk-border-glow);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
