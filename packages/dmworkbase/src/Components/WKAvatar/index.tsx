@@ -42,6 +42,31 @@ export default class WKAvatar extends Component<WKAvatarProps, WKAvatarState> {
         };
     }
 
+    componentDidMount() {
+        // 订阅头像变更事件：当 changeChannelAvatarTag 在别处被调用（例如
+        // BotDetailModal 里 bot 主人上传新头像）时，匹配到同一 channel 的
+        // WKAvatar 实例就地重新计算 src，避免整页刷新。
+        WKApp.mittBus.on("channel-avatar-changed", this.handleAvatarChanged);
+    }
+
+    componentWillUnmount() {
+        WKApp.mittBus.off("channel-avatar-changed", this.handleAvatarChanged);
+    }
+
+    private handleAvatarChanged = (payload: { channelID: string; channelType: number }) => {
+        const { channel } = this.props;
+        if (!channel) return;
+        if (
+            channel.channelID === payload.channelID &&
+            channel.channelType === payload.channelType
+        ) {
+            this.setState({
+                src: this.getImageSrc(),
+                loadedErr: false,
+            });
+        }
+    };
+
     componentDidUpdate(prevProps: WKAvatarProps) {
         // Update src when props change
         const srcChanged = prevProps.src !== this.props.src;

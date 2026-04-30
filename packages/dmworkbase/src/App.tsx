@@ -32,6 +32,11 @@ export type MittEvents = {
   'wk:send-as-todo': { title: string; source_channel_id: string; source_channel_type: number };
   'wk:create-todo-from-chat': { title: string; source_channel_id: string; source_channel_type: number };
   "summary-space-changed": undefined;
+  /**
+   * 频道头像发生变化（上传/更新）时广播。订阅者（例如 WKAvatar）可依据 channelID +
+   * channelType 匹配后刷新自身缓存的 avatar URL，避免整页刷新。
+   */
+  "channel-avatar-changed": { channelID: string; channelType: number };
 };
 import { EndpointCommon } from "./EndpointCommon";
 import APIClient from "./Service/APIClient";
@@ -626,6 +631,13 @@ export default class WKApp extends ProviderListener {
     }
     const t = new Date().getTime();
     WKApp.loginInfo.setStorageItem(myAvatarTag, `${t}`);
+    // 通知订阅者（例如 WKAvatar）立即刷新对应 channel 的头像，避免必须整页刷新
+    if (channel) {
+      WKApp.mittBus.emit("channel-avatar-changed", {
+        channelID: channel.channelID,
+        channelType: channel.channelType,
+      });
+    }
   }
   getChannelAvatarTag(channel?: Channel) {
     let myAvatarTag = "channelAvatarTag";
