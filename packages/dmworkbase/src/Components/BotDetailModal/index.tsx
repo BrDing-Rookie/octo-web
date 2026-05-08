@@ -90,24 +90,8 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
 
         this.setState({ reportStatusLoading: true });
         try {
-            const baseUrl = process.env.REACT_APP_CARD_BASE_URL || "http://localhost:8080";
-            const token = WKApp.loginInfo.token || "";
-
-            const response = await fetch(`${baseUrl}/api/v1/agent-cards/${uid}/report-status`, {
-                headers: { Token: token },
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-            if (result.code === 0) {
-                this.setState({ reported: result.data.reported });
-            } else {
-                // API 返回错误，默认为未上报
-                this.setState({ reported: false });
-            }
+            const result = await WKApp.apiClient.get(`agent-cards/${uid}/report-status`);
+            this.setState({ reported: result.data?.reported || false });
         } catch (error) {
             console.error("[BotDetailModal] loadReportStatus failed:", error);
             // 网络错误，默认为未上报
