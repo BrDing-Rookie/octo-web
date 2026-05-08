@@ -31,6 +31,7 @@ interface BotDetailModalState {
     editingDescription: boolean;
     descriptionDraft: string;
     savingDescription: boolean;
+    octopushStatus: "reported" | "managed_unreported" | "unmanaged" | null;
 }
 
 export default class BotDetailModal extends Component<BotDetailModalProps, BotDetailModalState> {
@@ -53,6 +54,7 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
         editingDescription: false,
         descriptionDraft: "",
         savingDescription: false,
+        octopushStatus: null,
     };
 
     componentDidMount() {
@@ -96,6 +98,7 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
             editingDescription: false,
             descriptionDraft: "",
             savingDescription: false,
+            octopushStatus: null,
         });
 
         const isStale = () => this.props.uid !== requestedUid;
@@ -114,6 +117,7 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
                 botCommands: data.bot_commands || "",
                 isFriend: data.follow === 1,
                 editingDescription: false,
+                octopushStatus: data.octopush_status || null,
             });
         } catch {
             // fallback to channel info
@@ -132,6 +136,7 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
                     botCommands: channelInfo?.orgData?.bot_commands || "",
                     isFriend: channelInfo?.orgData?.follow === 1,
                     editingDescription: false,
+                    octopushStatus: channelInfo?.orgData?.octopush_status || null,
                 });
             } catch {
                 if (isStale()) return;
@@ -147,6 +152,7 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
                     botCommands: "",
                     isFriend: false,
                     editingDescription: false,
+                    octopushStatus: null,
                 });
             }
         }
@@ -279,6 +285,12 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
         }
     };
 
+    handleViewClawInfo = () => {
+        // TODO: 打开龙虾详情弹窗（ClawInfoModal）
+        // 暂时显示 Toast，后续集成真实弹窗
+        Toast.info("龙虾详情功能开发中");
+    };
+
     render() {
         const { visible, onClose, uid } = this.props;
         const {
@@ -296,6 +308,7 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
             editingDescription,
             descriptionDraft,
             savingDescription,
+            octopushStatus,
         } = this.state;
         const isOwner = this.isOwner();
 
@@ -353,6 +366,22 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
                                 {name.replace(/\*\*/g, '')} <AiBadge />
                             </div>
                             <div className="wk-bot-detail-id">@{username}</div>
+                            {isOwner && octopushStatus && (
+                                <div
+                                    className={`wk-bot-detail-octopush-chip wk-bot-detail-octopush-chip--${octopushStatus}`}
+                                >
+                                    <span className="wk-bot-detail-octopush-chip-icon">
+                                        {octopushStatus === "reported" && "✅"}
+                                        {octopushStatus === "managed_unreported" && "⚠️"}
+                                        {octopushStatus === "unmanaged" && "🔌"}
+                                    </span>
+                                    <span className="wk-bot-detail-octopush-chip-text">
+                                        {octopushStatus === "reported" && "OctoPush · 已上报"}
+                                        {octopushStatus === "managed_unreported" && "OctoPush · 未上报"}
+                                        {octopushStatus === "unmanaged" && "未接入 OctoPush"}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                         <div className="wk-bot-detail-desc">
                             <div className="wk-bot-detail-label">
@@ -420,13 +449,32 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
                                 ))}
                             </div>
                         )}
+                        {isOwner && octopushStatus && (
+                            <Button
+                                block
+                                disabled={octopushStatus !== "reported"}
+                                onClick={this.handleViewClawInfo}
+                                className={`wk-bot-detail-claw-btn${octopushStatus !== "reported" ? " wk-bot-detail-claw-btn--disabled" : ""}`}
+                                style={{ marginTop: 16 }}
+                                aria-label={octopushStatus === "reported" ? "查看龙虾信息" : undefined}
+                                title={
+                                    octopushStatus === "managed_unreported"
+                                        ? "请先在 OctoPush 中上报机器信息，才可查看龙虾信息"
+                                        : octopushStatus === "unmanaged"
+                                        ? "请在 OctoPush 中配置连接，由 OctoPush 管理该龙虾后再查看"
+                                        : undefined
+                                }
+                            >
+                                🦞 查看龙虾信息
+                            </Button>
+                        )}
                         {isFriend ? (
                             <Button
                                 theme="solid"
                                 type="primary"
                                 block
                                 onClick={this.handleChat}
-                                style={{ marginTop: 16 }}
+                                style={{ marginTop: isOwner && octopushStatus ? 10 : 16 }}
                             >
                                 发送消息
                             </Button>

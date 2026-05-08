@@ -120,3 +120,102 @@
     outline-offset: 2px;
     border-radius: 2px;
 }
+
+/* OctoPush 状态 chip（头像下方，@username 之后） */
+.wk-bot-detail-octopush-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    line-height: 1.5;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* A: 已管理·已上报 → 绿色 */
+.wk-bot-detail-octopush-chip--reported {
+    background: rgba(34, 197, 94, 0.10);
+    color: #16a34a;
+}
+
+/* B: 已管理·未上报 → 橙色 */
+.wk-bot-detail-octopush-chip--managed_unreported {
+    background: rgba(245, 158, 11, 0.12);
+    color: #b45309;
+}
+
+/* C: 未接入 OctoPush → 灰色 */
+.wk-bot-detail-octopush-chip--unmanaged {
+    background: rgba(148, 163, 184, 0.15);
+    color: #64748b;
+}
+
+.wk-bot-detail-octopush-chip-icon {
+    font-size: 11px;
+    line-height: 1;
+}
+
+.wk-bot-detail-octopush-chip-text {
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+/* 查看龙虾信息按钮 */
+.wk-bot-detail-claw-btn {
+    background: #f1f0fc;
+    border: 1px solid #cac6f3;
+    color: #5b5fd6;
+    font-weight: 500;
+    transition: all 0.15s ease-in-out;
+}
+
+.wk-bot-detail-claw-btn:not(.wk-bot-detail-claw-btn--disabled):hover {
+    background: #e5e3f7;
+    border-color: #a6a1ec;
+}
+
+/* 灰态按钮（B/C 状态） */
+.wk-bot-detail-claw-btn--disabled {
+    background: #f5f5f5 !important;
+    border-color: #e5e5e5 !important;
+    color: #b0b0b0 !important;
+    cursor: not-allowed !important;
+}
+
+/* 灰态按钮的 tooltip（通过 title 属性实现） */
+.wk-bot-detail-claw-btn--disabled[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(100% + 6px);
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.4;
+    pointer-events: none;
+    z-index: 1000;
+    max-width: 260px;
+    width: max-content;
+}
+
+.wk-bot-detail-claw-btn--disabled[title]:hover::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(100% + 1px);
+    border: 5px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.85);
+    pointer-events: none;
+    z-index: 1000;
+}
