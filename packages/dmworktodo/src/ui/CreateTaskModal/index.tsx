@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Modal, DatePicker } from '@douyinfe/semi-ui';
-import type { CreateTodoReq } from '../../bridge/types';
+import type { CreateMatterReq } from '../../bridge/types';
 import MemberPicker from '../MemberPicker';
 import './index.css';
 
@@ -10,10 +10,10 @@ export interface CreateTaskModalProps {
   visible: boolean;
   onClose: () => void;
   onDirtyClose: () => void;
-  onConfirm: (req: CreateTodoReq) => Promise<void>;
+  onConfirm: (req: CreateMatterReq) => Promise<void>;
   prefillTitle?: string;
   prefillAssigneeUids?: string[];
-  /** 控制按钮文案：true 显示「发送并创建任务」*/
+  /** 控制按钮文案：true 显示「发送并创建事项」*/
   sendOnConfirm?: boolean;
 
   channel?: { channelId: string; channelType: number; name?: string };
@@ -164,7 +164,7 @@ export default function CreateTaskModal({
 
     setSubmitting(true);
     try {
-      const req: CreateTodoReq = {
+      const req: CreateMatterReq = {
         title: trimmedTitle,
         description: description.trim() || undefined,
         assignee_ids: assigneeUids.length > 0 ? assigneeUids : undefined,
@@ -223,16 +223,16 @@ export default function CreateTaskModal({
       className="wk-create-task-modal"
     >
       <div className="wk-create-task-modal__content" onKeyDown={handleKeyDown}>
-        <h3 className="wk-create-task-modal__title">创建任务</h3>
+        <h3 className="wk-create-task-modal__title">创建事项</h3>
 
-        {/* 任务名 */}
+        {/* 事项名 */}
         <div className="wk-create-task-modal__field">
-          <label className="wk-create-task-modal__label">任务名</label>
+          <label className="wk-create-task-modal__label">事项名</label>
           <input
             ref={titleInputRef}
             type="text"
             className={`wk-create-task-modal__input${sendOnConfirm ? ' wk-create-task-modal__input--readonly' : ''}`}
-            placeholder="输入任务名称..."
+            placeholder="输入事项名称..."
             value={title}
             onChange={sendOnConfirm ? () => {} : (e) => setTitle(e.target.value)}
             readOnly={sendOnConfirm}
@@ -303,7 +303,7 @@ export default function CreateTaskModal({
               <label className="wk-create-task-modal__label">备注</label>
               <textarea
                 className="wk-create-task-modal__textarea"
-                placeholder="添加任务备注..."
+                placeholder="添加事项备注..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
@@ -324,7 +324,7 @@ export default function CreateTaskModal({
             onClick={handleConfirm}
             disabled={!title.trim() || submitting}
           >
-            {sendOnConfirm ? '发送并创建任务' : '创建任务'} <span className="wk-create-task-modal__shortcut">↵</span>
+            {sendOnConfirm ? '发送并创建事项' : '创建事项'} <span className="wk-create-task-modal__shortcut">↵</span>
           </button>
         </div>
       </div>

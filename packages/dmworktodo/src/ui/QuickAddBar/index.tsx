@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import * as api from '../../api/todoApi';
-import type { CreateTodoReq, Todo } from '../../bridge/types';
+import type { CreateMatterReq, Matter } from '../../bridge/types';
 import CreateTaskModal from '../CreateTaskModal';
 import { Toast } from '../../utils/toast';
 import './index.css';
@@ -9,12 +9,12 @@ export interface QuickAddBarProps {
   channelId: string;
   channelType: number;
   channelName?: string;
-  /** Called after a todo is optimistically inserted or confirmed created */
-  onCreated: (todo: Todo) => void;
+  /** Called after a matter is optimistically inserted or confirmed created */
+  onCreated: (matter: Matter) => void;
 }
 
 /**
- * QuickAddBar — 底部快速添加任务输入框。
+ * QuickAddBar — 底部快速添加事项输入框。
  * - Enter：乐观插入假数据，后台创建，失败时回滚
  * - ⊕ 按钮：展开 CreateTaskModal 完整表单
  */
@@ -34,7 +34,7 @@ export default function QuickAddBar({
     if (!trimmed || creating) return;
 
     // 乐观插入
-    const optimisticTodo: Todo = {
+    const optimisticMatter: Matter = {
       id: `__optimistic__${Date.now()}`,
       title: trimmed,
       status: 'open',
@@ -46,12 +46,12 @@ export default function QuickAddBar({
       source_channel_type: channelType,
       source_name: channelName,
     };
-    onCreated(optimisticTodo);
+    onCreated(optimisticMatter);
     setTitle('');
     setCreating(true);
 
     try {
-      const real = await api.createTodo({
+      const real = await api.createMatter({
         title: trimmed,
         source_channel_id: channelId,
         source_channel_type: channelType,
@@ -60,9 +60,9 @@ export default function QuickAddBar({
       // 用真实数据替换乐观数据
       onCreated(real);
     } catch {
-      Toast.error('创建任务失败');
+      Toast.error('创建事项失败');
       // 回滚：通知父组件移除乐观条目（通过特殊 id 标识）
-      onCreated({ ...optimisticTodo, id: `__rollback__${optimisticTodo.id}` });
+      onCreated({ ...optimisticMatter, id: `__rollback__${optimisticMatter.id}` });
     } finally {
       setCreating(false);
     }
@@ -78,9 +78,9 @@ export default function QuickAddBar({
     [handleQuickCreate],
   );
 
-  const handleModalConfirm = useCallback(async (req: CreateTodoReq) => {
-    const real = await api.createTodo(req);
-    Toast.success('任务已创建');
+  const handleModalConfirm = useCallback(async (req: CreateMatterReq) => {
+    const real = await api.createMatter(req);
+    Toast.success('事项已创建');
     onCreated(real);
     setShowModal(false);
   }, [onCreated]);
@@ -92,7 +92,7 @@ export default function QuickAddBar({
           ref={inputRef}
           className="wk-quick-add-bar__input"
           type="text"
-          placeholder="快速添加任务... Enter 创建"
+          placeholder="快速添加事项... Enter 创建"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={handleKeyDown}

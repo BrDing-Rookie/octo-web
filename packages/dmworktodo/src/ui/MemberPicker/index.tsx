@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { WKApp, isSafeUrl } from '@octo/base';
 import AiBadge from '@octo/base/src/Components/AiBadge';
-import type { TodoAssignee } from '../../bridge/types';
+import type { MatterAssignee } from '../../bridge/types';
 import { useMemberList, AssigneeInfo } from '../../hooks/useMemberList';
 import * as api from '../../api/todoApi';
 import { Toast } from '../../utils/toast';
@@ -21,8 +21,8 @@ interface MemberPickerControlledProps {
 
 interface MemberPickerDirectProps {
   mode: 'direct';
-  todoId: string;
-  assignees: TodoAssignee[];
+  matterId: string;
+  assignees: MatterAssignee[];
   onChanged?: (addedUid?: string, removedUid?: string) => void;
   channel?: { channelId: string; channelType: number };
   placeholder?: string;
@@ -197,7 +197,7 @@ export default function MemberPicker(props: MemberPickerProps) {
 
   // 提取具体字段避免 [props] 导致每次渲染重建 callback
   const onChange = props.mode === 'controlled' ? props.onChange : undefined;
-  const todoId = props.mode === 'direct' ? props.todoId : undefined;
+  const matterId = props.mode === 'direct' ? props.matterId : undefined;
   const onChanged = props.mode === 'direct' ? props.onChanged : undefined;
 
   // 受控模式更新
@@ -211,20 +211,20 @@ export default function MemberPicker(props: MemberPickerProps) {
   // 直连模式更新
   const updateDirect = useCallback(
     async (uid: string, action: 'add' | 'remove') => {
-      if (!todoId) return;
+      if (!matterId) return;
       try {
         if (action === 'add') {
-          await api.addAssignee(todoId, uid);
+          await api.addAssignee(matterId, uid);
           onChanged?.(uid, undefined);
         } else {
-          await api.removeAssignee(todoId, uid);
+          await api.removeAssignee(matterId, uid);
           onChanged?.(undefined, uid);
         }
       } catch (error) {
         Toast.error(`${action === 'add' ? '添加' : '移除'}成员失败`);
       }
     },
-    [todoId, onChanged]
+    [matterId, onChanged]
   );
 
   // 添加成员

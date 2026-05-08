@@ -1,44 +1,46 @@
 import axios from 'axios';
 import { WKApp } from '@octo/base';
 import type {
-  Todo,
-  TodoDetail,
-  Goal,
-  GoalStatus,
-  TodoComment,
-  TodoAttachment,
+  Matter,
+  MatterDetail,
+  MatterComment,
+  MatterChannel,
   PaginatedList,
-  TodoListParams,
-  CreateTodoReq,
-  UpdateTodoReq,
-  CreateGoalReq,
-  UpdateGoalReq,
-  TodoStatus,
+  MatterListParams,
+  CreateMatterReq,
+  UpdateMatterReq,
+  MatterStatus,
+  LinkChannelReq,
+  AddCommentReq,
+  ListCommentsParams,
+  CommentAttachmentReq,
 } from '../bridge/types';
 
 /**
- * Isolated axios instance for todo-service API.
+ * Isolated axios instance for matters service API.
  * Must NOT inherit axios.defaults.baseURL (set to '/api/v1/' by WKApp.apiClient)
  * otherwise all paths get double-prefixed.
  */
-const todoAxios = axios.create({ baseURL: '' });
+const matterAxios = axios.create({ baseURL: '' });
 
 // Inject auth headers via interceptor (consistent with base APIClient pattern).
 // Token is read at request time so it stays fresh after refresh.
-todoAxios.interceptors.request.use((config) => {
+matterAxios.interceptors.request.use((config) => {
   const token = WKApp.loginInfo.token;
   if (token) {
-    config.headers['token'] = token;
+    config.headers = config.headers ?? {};
+    config.headers['Authorization'] = `Bearer ${token}`;
   }
   const spaceId = WKApp.shared.currentSpaceId;
   if (spaceId) {
+    config.headers = config.headers ?? {};
     config.headers['X-Space-Id'] = spaceId;
   }
   return config;
 });
 
 // Handle 401 — mirror APIClient behavior (trigger logout on expired token)
-todoAxios.interceptors.response.use(undefined, (err) => {
+matterAxios.interceptors.response.use(undefined, (err) => {
   if (err?.response?.status === 401) {
     WKApp.shared.logout();
   }
@@ -57,10 +59,11 @@ function extractErrorMessage(err: unknown): string {
 }
 
 /**
- * Base path for todo-service API.
- * Vite proxy rewrites /todo/api/v1/* → todo-service:8080/api/v1/*
+ * Base path for matters service API.
+ * Vite dev proxy (apps/web/vite.config.ts) rewrites /matter/* -> /* on the target.
+ * Production nginx must have an equivalent rewrite rule.
  */
-const BASE = '/todo/api/v1';
+const BASE = '/matter/api/v1';
 
 /**
  * Build query string params, filtering out undefined values.
@@ -81,7 +84,7 @@ function buildParams(obj?: Record<string, unknown>): Record<string, string> {
  */
 async function get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
   try {
-    const resp = await todoAxios.get(`${BASE}${path}`, {
+    const resp = await matterAxios.get(`${BASE}${path}`, {
       params: buildParams(params),
     });
     return resp.data;
@@ -92,7 +95,7 @@ async function get<T>(path: string, params?: Record<string, unknown>): Promise<T
 
 async function post<T>(path: string, data?: unknown): Promise<T> {
   try {
-    const resp = await todoAxios.post(`${BASE}${path}`, data);
+    const resp = await matterAxios.post(`${BASE}${path}`, data);
     return resp.data;
   } catch (err: unknown) {
     throw new Error(extractErrorMessage(err));
@@ -101,7 +104,7 @@ async function post<T>(path: string, data?: unknown): Promise<T> {
 
 async function put<T>(path: string, data?: unknown): Promise<T> {
   try {
-    const resp = await todoAxios.put(`${BASE}${path}`, data);
+    const resp = await matterAxios.put(`${BASE}${path}`, data);
     return resp.data;
   } catch (err: unknown) {
     throw new Error(extractErrorMessage(err));
@@ -110,114 +113,74 @@ async function put<T>(path: string, data?: unknown): Promise<T> {
 
 async function del<T>(path: string): Promise<T> {
   try {
-    const resp = await todoAxios.delete(`${BASE}${path}`);
+    const resp = await matterAxios.delete(`${BASE}${path}`);
     return resp.data;
   } catch (err: unknown) {
     throw new Error(extractErrorMessage(err));
   }
 }
 
-// ─── Goals ──────────────────────────────────────────────
+// ─── Matters ────────────────────────────────────────────
 
-export async function listGoals(status?: GoalStatus): Promise<Goal[]> {
-  const params: Record<string, unknown> = {};
-  if (status) params.status = status;
-  const resp = await get<PaginatedList<Goal>>('/goals', params);
-  return resp?.data ?? [];
+export async function listMatters(params?: MatterListParams): Promise<PaginatedList<Matter>> {
+  return get<PaginatedList<Matter>>('/matters', params as unknown as Record<string, unknown>);
 }
 
-export async function getGoal(goalId: string): Promise<Goal> {
-  return get<Goal>(`/goals/${goalId}`);
+export async function getMatter(matterId: string, sourceChannelId?: string): Promise<MatterDetail> {
+  return get<MatterDetail>(`/matters/${matterId}`, sourceChannelId ? { source_channel_id: sourceChannelId } : undefined);
 }
 
-export async function createGoal(req: CreateGoalReq): Promise<Goal> {
-  return post<Goal>('/goals', req);
+export async function createMatter(req: CreateMatterReq): Promise<MatterDetail> {
+  return post<MatterDetail>('/matters', req);
 }
 
-export async function updateGoal(goalId: string, req: UpdateGoalReq): Promise<Goal> {
-  return put<Goal>(`/goals/${goalId}`, req);
+export async function updateMatter(matterId: string, req: UpdateMatterReq): Promise<MatterDetail> {
+  return put<MatterDetail>(`/matters/${matterId}`, req);
 }
 
-export async function deleteGoal(goalId: string): Promise<void> {
-  return del<void>(`/goals/${goalId}`);
+export async function transitionMatter(matterId: string, status: MatterStatus): Promise<MatterDetail> {
+  return put<MatterDetail>(`/matters/${matterId}/status`, { status });
 }
 
-export async function transitionGoalStatus(goalId: string, status: GoalStatus): Promise<Goal> {
-  return put<Goal>(`/goals/${goalId}/status`, { status });
-}
-
-// ─── Todos ──────────────────────────────────────────────
-
-export async function listTodos(params?: TodoListParams): Promise<PaginatedList<Todo>> {
-  return get<PaginatedList<Todo>>('/todos', params as unknown as Record<string, unknown>);
-}
-
-export async function getTodo(todoId: string, sourceChannelId?: string): Promise<TodoDetail> {
-  return get<TodoDetail>(`/todos/${todoId}`, sourceChannelId ? { source_channel_id: sourceChannelId } : undefined);
-}
-
-export async function createTodo(req: CreateTodoReq): Promise<TodoDetail> {
-  return post<TodoDetail>('/todos', req);
-}
-
-export async function updateTodo(todoId: string, req: UpdateTodoReq): Promise<TodoDetail> {
-  return put<TodoDetail>(`/todos/${todoId}`, req);
-}
-
-export async function transitionTodo(todoId: string, status: TodoStatus): Promise<TodoDetail> {
-  return put<TodoDetail>(`/todos/${todoId}/status`, { status });
-}
-
-export async function deleteTodo(todoId: string): Promise<void> {
-  return del<void>(`/todos/${todoId}`);
+export async function deleteMatter(matterId: string): Promise<void> {
+  return del<void>(`/matters/${matterId}`);
 }
 
 // ─── Assignees ──────────────────────────────────────────
 
-export async function addAssignee(todoId: string, userId: string): Promise<void> {
-  return post<void>(`/todos/${todoId}/assignees`, { user_id: userId });
+export async function addAssignee(matterId: string, userId: string): Promise<void> {
+  return post<void>(`/matters/${matterId}/assignees`, { user_id: userId });
 }
 
-export async function removeAssignee(todoId: string, userId: string): Promise<void> {
-  return del<void>(`/todos/${todoId}/assignees/${userId}`);
+export async function removeAssignee(matterId: string, userId: string): Promise<void> {
+  return del<void>(`/matters/${matterId}/assignees/${userId}`);
 }
 
+// ─── Channels ───────────────────────────────────────────
+
+export async function linkChannel(matterId: string, req: LinkChannelReq): Promise<MatterChannel> {
+  return post<MatterChannel>(`/matters/${matterId}/channels`, req);
+}
+
+export async function unlinkChannel(matterId: string, channelId: string): Promise<void> {
+  return del<void>(`/matters/${matterId}/channels/${channelId}`);
+}
 
 // ─── Comments ───────────────────────────────────────────
 
-export async function listComments(todoId: string, sourceChannelId?: string): Promise<TodoComment[]> {
-  return get<TodoComment[]>(`/todos/${todoId}/comments`, sourceChannelId ? { source_channel_id: sourceChannelId } : undefined);
+export async function listComments(matterId: string, params?: ListCommentsParams): Promise<PaginatedList<MatterComment>> {
+  return get<PaginatedList<MatterComment>>(`/matters/${matterId}/comments`, params as unknown as Record<string, unknown>);
 }
 
-export async function addComment(todoId: string, content: string): Promise<TodoComment> {
-  return post<TodoComment>(`/todos/${todoId}/comments`, { content });
+export async function addComment(matterId: string, content: string, attachments?: CommentAttachmentReq[]): Promise<MatterComment> {
+  const trimmed = content?.trim() || null;
+  if (!trimmed && (!attachments || attachments.length === 0)) {
+    throw new Error('Comment must have content or attachments');
+  }
+  const body: AddCommentReq = { content: trimmed, attachments };
+  return post<MatterComment>(`/matters/${matterId}/comments`, body);
 }
 
-export async function deleteComment(todoId: string, commentId: string): Promise<void> {
-  return del<void>(`/todos/${todoId}/comments/${commentId}`);
-}
-
-// ─── Attachments ────────────────────────────────────────
-
-export async function listAttachments(todoId: string, sourceChannelId?: string): Promise<TodoAttachment[]> {
-  return get<TodoAttachment[]>(`/todos/${todoId}/attachments`, sourceChannelId ? { source_channel_id: sourceChannelId } : undefined);
-}
-
-export async function createAttachment(
-  todoId: string,
-  fileUrl: string,
-  fileName?: string,
-  fileSize?: number,
-  mimeType?: string,
-): Promise<TodoAttachment> {
-  return post<TodoAttachment>(`/todos/${todoId}/attachments`, {
-    file_url: fileUrl,
-    file_name: fileName,
-    file_size: fileSize,
-    mime_type: mimeType,
-  });
-}
-
-export async function deleteAttachment(todoId: string, attachmentId: string): Promise<void> {
-  return del<void>(`/todos/${todoId}/attachments/${attachmentId}`);
+export async function deleteComment(matterId: string, commentId: string): Promise<void> {
+  return del<void>(`/matters/${matterId}/comments/${commentId}`);
 }

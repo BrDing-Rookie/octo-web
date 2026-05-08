@@ -112,11 +112,13 @@ export default defineConfig(({ mode }) => {
           secure: false,
           rewrite: (path: string) => path.replace(/^\/summary/, ''),
         },
-        // Todo service API — must be before the general /api/ rule
-        '/todo/api/v1': {
-          target: env.VITE_TODO_API_URL || apiOrigin,
+        // Matters service API — must be before the general /api/ rule
+        // VITE_TODO_API_URL is deprecated — use VITE_MATTER_API_URL instead
+        '/matter/api/v1': {
+          target: env.VITE_MATTER_API_URL || env.VITE_TODO_API_URL || apiOrigin,
           changeOrigin: true,
           secure: false,
+          rewrite: (path: string) => path.replace(/^\/matter/, ''),
         },
         '/api/': {
           target: apiOrigin,

@@ -1,15 +1,15 @@
 /**
- * Minimal toast utility for @octo/todo.
+ * Minimal toast utility for @dmwork/matter.
  * Uses a self-removing DOM element — no external dependency.
  */
 
 const TOAST_DURATION = 3000;
 
 function createToastContainer(): HTMLDivElement {
-  let container = document.getElementById('wk-todo-toast-container') as HTMLDivElement | null;
+  let container = document.getElementById('wk-matter-toast-container') as HTMLDivElement | null;
   if (!container) {
     container = document.createElement('div');
-    container.id = 'wk-todo-toast-container';
+    container.id = 'wk-matter-toast-container';
     Object.assign(container.style, {
       position: 'fixed',
       top: '16px',

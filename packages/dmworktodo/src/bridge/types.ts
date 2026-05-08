@@ -1,24 +1,24 @@
-// Todo module type definitions — aligned with todo-service backend models
+// Matter module type definitions — aligned with matters service backend models.
+// Frontend uses Matter types naming for backwards compatibility at the UI layer;
+// the wire types match the backend Matter* structs.
 
 // ─── Status enums ───────────────────────────────────────
 
-export type TodoStatus = 'open' | 'closed';
-export type GoalStatus = 'active' | 'completed' | 'archived';
+export type MatterStatus = 'open' | 'done' | 'archived';
 
 // ─── Core models (match backend JSON exactly) ───────────
 
 /**
- * Todo — from model.Todo in todo-service.
- * `assignees` is only present in TodoDetail responses (GET /todos/:id, POST /todos).
+ * Matter — from model.Matter in matters service.
+ * `assignees` is only present in MatterDetail responses (GET /matters/:id, POST /matters).
  */
-export interface Todo {
+export interface Matter {
   id: string;
   space_id: string;
-  goal_id?: string;
   title: string;
   description?: string;
   creator_id: string;
-  status: TodoStatus;
+  status: MatterStatus;
   deadline?: string;
   remind_at?: string;
   source_channel_id?: string;
@@ -29,70 +29,49 @@ export interface Todo {
 }
 
 /**
- * TodoDetail — from service.TodoDetail, returned by GET /todos/:id and POST /todos.
- * Extends Todo with assignees.
+ * MatterDetail — from service.MatterDetail, returned by GET /matters/:id and POST /matters.
+ * Extends Matter with assignees, participants, and linked channels.
  */
-export interface TodoDetail extends Todo {
-  assignees: TodoAssignee[];
+export interface MatterDetail extends Matter {
+  assignees: MatterAssignee[];
+  participants?: string[];
+  channels?: MatterChannel[];
 }
 
-export interface TodoAssignee {
+export interface MatterAssignee {
   id: string;
-  todo_id: string;
+  matter_id: string;
   user_id: string;
   created_at: string;
 }
 
-/**
- * Goal — from model.Goal in todo-service.
- * Backend uses `creator_id`, not `owner_id`.
- */
-export interface Goal {
+export interface MatterChannel {
   id: string;
-  space_id: string;
-  title: string;
-  description?: string;
-  creator_id: string;
-  status: GoalStatus;
-  deadline?: string;
-  open_count: number;
-  closed_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface GoalAssignee {
-  id: string;
-  goal_id: string;
-  user_id: string;
+  matter_id: string;
+  channel_id: string;
+  channel_type: number;
+  channel_name?: string;
+  linked_by: string;
   created_at: string;
 }
 
-/**
- * GoalDetail — from service.GoalDetail, returned by GET /goals/:id.
- * Returns goal metadata + assignees.
- */
-export interface GoalDetail extends Goal {
-  assignees: GoalAssignee[];
-}
-
-export interface TodoComment {
+export interface CommentAttachment {
   id: string;
-  todo_id: string;
-  user_id: string;
-  content: string;
-  created_at: string;
-}
-
-export interface TodoAttachment {
-  id: string;
-  todo_id: string;
-  user_id: string;
+  comment_id: string;
   file_url: string;
   file_name?: string;
   file_size?: number;
   mime_type?: string;
   created_at: string;
+}
+
+export interface MatterComment {
+  id: string;
+  matter_id: string;
+  user_id: string;
+  content: string | null;
+  created_at: string;
+  attachments?: CommentAttachment[];
 }
 
 // ─── Pagination ─────────────────────────────────────────
@@ -109,9 +88,8 @@ export interface PaginatedList<T> {
 
 // ─── Request types ──────────────────────────────────────
 
-export interface TodoListParams {
-  status?: TodoStatus;
-  goal_id?: string;
+export interface MatterListParams {
+  status?: MatterStatus;
   assignee_id?: string;
   creator_id?: string;
   source_channel_id?: string;
@@ -121,10 +99,9 @@ export interface TodoListParams {
   cursor?: string;
 }
 
-export interface CreateTodoReq {
+export interface CreateMatterReq {
   title: string;
   description?: string;
-  goal_id?: string;
   assignee_ids?: string[];
   source_channel_id?: string;
   source_channel_type?: number;
@@ -132,24 +109,35 @@ export interface CreateTodoReq {
   deadline?: string;
 }
 
-export interface UpdateTodoReq {
+export interface UpdateMatterReq {
   title?: string;
   description?: string | null;
-  goal_id?: string | null;
   deadline?: string | null;
   remind_at?: string | null;
 }
 
-export interface CreateGoalReq {
-  title: string;
-  description?: string;
-  deadline?: string;
+export interface CommentAttachmentReq {
+  file_url: string;
+  file_name?: string;
+  file_size?: number;
+  mime_type?: string;
 }
 
-export interface UpdateGoalReq {
-  title?: string;
-  description?: string;
-  deadline?: string;
+export interface AddCommentReq {
+  content?: string | null;
+  attachments?: CommentAttachmentReq[];
+}
+
+export interface LinkChannelReq {
+  channel_id: string;
+  channel_type: number;
+  channel_name?: string;
+}
+
+export interface ListCommentsParams {
+  source_channel_id?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 // ─── API error ──────────────────────────────────────────

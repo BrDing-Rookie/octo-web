@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo, useReducer } from 'react';
 import { WKApp, isSafeUrl, resolveExternalForViewer } from '@octo/base';
 import WKSDK, { Channel, ChannelInfo, ChannelInfoListener, ChannelTypePerson } from 'wukongimjssdk';
-import type { TodoAssignee } from '../../bridge/types';
+import type { MatterAssignee } from '../../bridge/types';
 import { useUserName } from '../../hooks/useUserName';
 import * as api from '../../api/todoApi';
 import { Toast } from '../../utils/toast';
@@ -9,9 +9,9 @@ import './index.css';
 
 // ─── Single Assignee Chip ────────────────────────────────
 
-function AssigneeChip({ assignee, todoId, editable, onRemoved }: {
-  assignee: TodoAssignee;
-  todoId: string;
+function AssigneeChip({ assignee, matterId, editable, onRemoved }: {
+  assignee: MatterAssignee;
+  matterId: string;
   editable: boolean;
   onRemoved: () => void;
 }) {
@@ -23,13 +23,13 @@ function AssigneeChip({ assignee, todoId, editable, onRemoved }: {
     if (removing) return;
     setRemoving(true);
     try {
-      await api.removeAssignee(todoId, assignee.user_id);
+      await api.removeAssignee(matterId, assignee.user_id);
       onRemoved();
     } catch (err) {
       Toast.error('Failed to remove assignee');
       setRemoving(false);
     }
-  }, [todoId, assignee.user_id, removing, onRemoved]);
+  }, [matterId, assignee.user_id, removing, onRemoved]);
 
   return (
     <span className="wk-assignee-chip">
@@ -57,7 +57,7 @@ interface SearchResult {
   avatar: string;
   /**
    * YUJ-138: 候选人相对当前查看 Space 的来源 Space 名称。非空时在姓名后
-   * 追加「@{sourceSpaceName}」后缀，避免跨 Space 分派 Todo 时误选外部成员。
+   * 追加「@{sourceSpaceName}」后缀，避免跨 Space 分派 Matter 时误选外部成员。
    */
   sourceSpaceName?: string;
 }
@@ -91,12 +91,12 @@ function SearchResultItem({ result, onSelect }: { result: SearchResult; onSelect
 // ─── Assignee Editor ─────────────────────────────────────
 
 export interface AssigneeEditorProps {
-  todoId: string;
-  assignees: TodoAssignee[];
+  matterId: string;
+  assignees: MatterAssignee[];
   onChanged: () => void;
 }
 
-export default function AssigneeEditor({ todoId, assignees, onChanged }: AssigneeEditorProps) {
+export default function AssigneeEditor({ matterId, assignees, onChanged }: AssigneeEditorProps) {
   const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
@@ -150,7 +150,7 @@ export default function AssigneeEditor({ todoId, assignees, onChanged }: Assigne
       )
       .slice(0, 8)
       .map((c) => {
-        // YUJ-138: 跨 Space 分派 Todo 时，在候选姓名后显示外部成员的来源 Space。
+        // YUJ-138: 跨 Space 分派 Matter 时，在候选姓名后显示外部成员的来源 Space。
         // Contacts 本身不携带 home_space_* 字段，从 channelInfo.orgData 读取；
         // cache miss 由下面的 useEffect 异步 fetch，下次 tick 时命中本地缓存。
         let sourceSpaceName = '';
@@ -249,7 +249,7 @@ export default function AssigneeEditor({ todoId, assignees, onChanged }: Assigne
     if (adding) return;
     setAdding(true);
     try {
-      await api.addAssignee(todoId, uid);
+      await api.addAssignee(matterId, uid);
       setShowSearch(false);
       setQuery('');
       onChanged();
@@ -258,7 +258,7 @@ export default function AssigneeEditor({ todoId, assignees, onChanged }: Assigne
     } finally {
       setAdding(false);
     }
-  }, [todoId, adding, onChanged]);
+  }, [matterId, adding, onChanged]);
 
   return (
     <div className="wk-assignee-editor">
@@ -273,7 +273,7 @@ export default function AssigneeEditor({ todoId, assignees, onChanged }: Assigne
           <AssigneeChip
             key={a.id}
             assignee={a}
-            todoId={todoId}
+            matterId={matterId}
             editable={true}
             onRemoved={onChanged}
           />

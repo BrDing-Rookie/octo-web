@@ -1,37 +1,35 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import * as api from '../api/todoApi';
-import type { Todo, TodoListParams, TodoStatus } from '../bridge/types';
+import type { Matter, MatterListParams, MatterStatus } from '../bridge/types';
 import { Toast } from '../utils/toast';
 
-export interface UseTodoListOptions {
-  goalId?: string;
-  initialFilters?: TodoListParams;
+export interface UseMatterListOptions {
+  initialFilters?: MatterListParams;
   pageSize?: number;
 }
 
-export interface UseTodoListResult {
-  todos: Todo[];
+export interface UseMatterListResult {
+  matters: Matter[];
   loading: boolean;
   hasMore: boolean;
-  filters: TodoListParams;
-  setFilters: (patch: Partial<TodoListParams>) => void;
+  filters: MatterListParams;
+  setFilters: (patch: Partial<MatterListParams>) => void;
   reload: () => void;
   loadMore: () => void;
-  toggleStatus: (todoId: string, currentStatus: TodoStatus) => Promise<void>;
-  optimisticUpdate: (todoId: string, patch: Partial<Todo>) => void;
-  addOptimistic: (todo: Todo) => void;
-  removeOptimistic: (todoId: string) => void;
+  toggleStatus: (matterId: string, currentStatus: MatterStatus) => Promise<void>;
+  optimisticUpdate: (matterId: string, patch: Partial<Matter>) => void;
+  addOptimistic: (matter: Matter) => void;
+  removeOptimistic: (matterId: string) => void;
 }
 
-export function useTodoList({
-  goalId,
+export function useMatterList({
   initialFilters = {},
   pageSize = 50,
-}: UseTodoListOptions = {}): UseTodoListResult {
-  const [todos, setTodos] = useState<Todo[]>([]);
+}: UseMatterListOptions = {}): UseMatterListResult {
+  const [matters, setMatters] = useState<Matter[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
-  const [filters, setFiltersState] = useState<TodoListParams>(initialFilters);
+  const [filters, setFiltersState] = useState<MatterListParams>(initialFilters);
   const cursorRef = useRef<string | undefined>();
 
   // 当 initialFilters 引用变化时（如 channel 切换）同步重置 filters
@@ -49,28 +47,27 @@ export function useTodoList({
   const load = useCallback(async (append = false) => {
     if (!append) setLoading(true);
     try {
-      const params: TodoListParams = { ...filters, limit: pageSize };
-      if (goalId) params.goal_id = goalId;
+      const params: MatterListParams = { ...filters, limit: pageSize };
       if (append && cursorRef.current) params.cursor = cursorRef.current;
 
-      const res = await api.listTodos(params);
-      setTodos(append ? (prev) => [...prev, ...res.data] : res.data);
+      const res = await api.listMatters(params);
+      setMatters(append ? (prev) => [...prev, ...res.data] : res.data);
       setHasMore(res.pagination.has_more);
       cursorRef.current = res.pagination.next_cursor;
     } catch {
-      Toast.error('加载任务失败');
+      Toast.error('加载事项失败');
     } finally {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goalId, filtersKey, pageSize]);
+  }, [filtersKey, pageSize]);
 
   useEffect(() => {
     cursorRef.current = undefined;
     load(false);
   }, [load]);
 
-  const setFilters = useCallback((patch: Partial<TodoListParams>) => {
+  const setFilters = useCallback((patch: Partial<MatterListParams>) => {
     setFiltersState((prev) => ({ ...prev, ...patch }));
   }, []);
 
@@ -83,30 +80,31 @@ export function useTodoList({
     load(true);
   }, [load]);
 
-  const toggleStatus = useCallback(async (todoId: string, currentStatus: TodoStatus) => {
-    const newStatus: TodoStatus = currentStatus === 'open' ? 'closed' : 'open';
+  const toggleStatus = useCallback(async (matterId: string, currentStatus: MatterStatus) => {
+    if (currentStatus === 'archived') return; // archived cannot be toggled directly
+    const newStatus: MatterStatus = currentStatus === 'open' ? 'done' : 'open';
     try {
-      await api.transitionTodo(todoId, newStatus);
-      setTodos((prev) =>
-        prev.map((t) => (t.id === todoId ? { ...t, status: newStatus } : t))
+      await api.transitionMatter(matterId, newStatus);
+      setMatters((prev) =>
+        prev.map((t) => (t.id === matterId ? { ...t, status: newStatus } : t))
       );
     } catch {
       Toast.error('更新状态失败');
     }
   }, []);
 
-  const optimisticUpdate = useCallback((todoId: string, patch: Partial<Todo>) => {
-    setTodos((prev) => prev.map((t) => (t.id === todoId ? { ...t, ...patch } : t)));
+  const optimisticUpdate = useCallback((matterId: string, patch: Partial<Matter>) => {
+    setMatters((prev) => prev.map((t) => (t.id === matterId ? { ...t, ...patch } : t)));
   }, []);
 
-  const addOptimistic = useCallback((todo: Todo) => {
-    setTodos((prev) => [todo, ...prev]);
+  const addOptimistic = useCallback((matter: Matter) => {
+    setMatters((prev) => [matter, ...prev]);
   }, []);
 
   /** 移除乐观条目：精确匹配 id，或前缀匹配（传入前缀字符串） */
-  const removeOptimistic = useCallback((todoIdOrPrefix: string) => {
-    setTodos((prev) => prev.filter((t) => !t.id.startsWith(todoIdOrPrefix) && t.id !== todoIdOrPrefix));
+  const removeOptimistic = useCallback((matterIdOrPrefix: string) => {
+    setMatters((prev) => prev.filter((t) => !t.id.startsWith(matterIdOrPrefix) && t.id !== matterIdOrPrefix));
   }, []);
 
-  return { todos, loading, hasMore, filters, setFilters, reload, loadMore, toggleStatus, optimisticUpdate, addOptimistic, removeOptimistic };
+  return { matters, loading, hasMore, filters, setFilters, reload, loadMore, toggleStatus, optimisticUpdate, addOptimistic, removeOptimistic };
 }

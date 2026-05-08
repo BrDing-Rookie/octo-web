@@ -1,25 +1,26 @@
 import React from 'react';
-import type { TodoStatus } from '../../bridge/types';
+import type { MatterStatus } from '../../bridge/types';
 import './index.css';
 
-export interface TodoStatusBadgeProps {
-  status: TodoStatus;
+export interface MatterStatusBadgeProps {
+  status: MatterStatus;
   className?: string;
 }
 
-const STATUS_LABELS: Record<TodoStatus, string> = {
+const STATUS_LABELS: Record<MatterStatus, string> = {
   open: '待处理',
-  closed: '已完成',
+  done: '已完成',
+  archived: '已归档',
 };
 
-export default function TodoStatusBadge({ status, className }: TodoStatusBadgeProps) {
+export default function MatterStatusBadge({ status, className }: MatterStatusBadgeProps) {
   return (
     <span
-      className={`wk-todo-status-badge wk-todo-status-badge--${status}${className ? ` ${className}` : ''}`}
+      className={`wk-matter-status-badge wk-matter-status-badge--${status}${className ? ` ${className}` : ''}`}
     >
       {STATUS_LABELS[status]}
     </span>
   );
 }
 
-export { TodoStatusBadge };
+export { MatterStatusBadge };

@@ -4,9 +4,9 @@ import { WKApp, Menus, ChannelTypeCommunityTopic } from '@octo/base';
 import type { IModule, ConversationContext } from '@octo/base';
 import { ChannelTypeGroup } from 'wukongimjssdk';
 import WKSDK from 'wukongimjssdk';
-import TodoPage from './pages/TodoPage';
-import ChatTodoPanel from './panel/ChatTodoPanel';
-import { createTodo } from './api/todoApi';
+import MatterPage from './pages/TodoPage';
+import ChatMatterPanel from './panel/ChatTodoPanel';
+import { createMatter } from './api/todoApi';
 import { Toast } from './utils/toast';
 import CreateTaskModal from './ui/CreateTaskModal';
 import './ui/tokens.css';
@@ -43,16 +43,16 @@ if (import.meta.hot) {
     // Properly unmount React root before removing DOM node
     _globalTodoModalRoot?.unmount();
     _globalTodoModalRoot = null;
-    const el = document.getElementById('todo-global-modal-root');
+    const el = document.getElementById('matter-global-modal-root');
     if (el) el.remove();
     _globalTodoModalMounted = false;
   });
 }
 
 /**
- * Placeholder Todo icon for the NavRail.
+ * Placeholder Matter icon for the NavRail.
  */
-function TodoIcon({ active }: { active?: boolean }) {
+function MatterIcon({ active }: { active?: boolean }) {
   const color = active ? 'var(--wk-brand-primary, #7C5CFC)' : 'currentColor';
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -91,11 +91,11 @@ function ChecklistIcon() {
 }
 
 /**
- * TodoModule — registers the Todo feature into Octo web.
+ * MatterModule — registers the Matter feature into Octo web.
  */
-export default class TodoModule implements IModule {
+export default class MatterModule implements IModule {
   id(): string {
-    return 'TodoModule';
+    return 'MatterModule';
   }
 
   init(): void {
@@ -104,18 +104,18 @@ export default class TodoModule implements IModule {
     _initialized = true;
 
     // Register route
-    WKApp.route.register('/todo', () => <TodoPage />);
+    WKApp.route.register('/matter', () => <MatterPage />);
 
     // Register NavRail menu item (sort=4001, after contacts=4000)
     WKApp.menus.register(
-      'todo',
+      'matter',
       () => {
         const m = new Menus(
-          'todo',
-          '/todo',
-          'Todos',
-          <TodoIcon />,
-          <TodoIcon active />,
+          'matter',
+          '/matter',
+          '事项',
+          <MatterIcon />,
+          <MatterIcon active />,
         );
         return m;
       },
@@ -133,21 +133,21 @@ export default class TodoModule implements IModule {
   }
 
   /**
-   * Register "Create Todo" in message context menu (right-click).
+   * Register "Create Matter" in message context menu (right-click).
    * Only shows in group and thread channels.
    * Uses WKApp.endpoints.registerMessageContextMenus directly — the handler
    * returns a plain object with title + onClick (no need to import MessageContextMenus class).
    */
   private registerChatContextMenu(): void {
     WKApp.endpoints.registerMessageContextMenus(
-      'contextmenus.createTodo',
+      'contextmenus.createMatter',
       (message) => {
         const ct = message.channel.channelType;
         if (ct !== ChannelTypeGroup && ct !== ChannelTypeCommunityTopic) {
           return null;
         }
         return {
-          title: '创建任务',
+          title: '创建事项',
           onClick: () => {
             // 优先用编辑后的内容（remoteExtra.contentEdit），fallback 到原始 conversationDigest
             const remoteExtra = message.remoteExtra as { isEdit?: boolean; contentEdit?: { conversationDigest?: string } } | undefined;
@@ -173,7 +173,7 @@ export default class TodoModule implements IModule {
   }
 
   /**
-   * Register todo toggle button in the chat toolbar.
+   * Register matter toggle button in the chat toolbar.
    * Only visible in group and topic channels.
    * Clicking opens CreateTaskModal with prefilled title (from input box) and channel info.
    */
@@ -192,7 +192,7 @@ export default class TodoModule implements IModule {
   }
 
   /**
-   * Register ChatTodoPanel in the right sidebar (mutually exclusive with thread panel).
+   * Register ChatMatterPanel in the right sidebar (mutually exclusive with thread panel).
    */
   private registerChatTodoPanel(): void {
     WKApp.endpoints.registerChatTodoPanel(
@@ -202,7 +202,7 @@ export default class TodoModule implements IModule {
           return undefined;
         }
         return (
-          <ChatTodoPanel
+          <ChatMatterPanel
             channelId={channel.channelID}
             channelType={channel.channelType}
             onClose={onClose}
@@ -213,8 +213,8 @@ export default class TodoModule implements IModule {
   }
 
   /**
-   * Register todo icon in chat header (right side).
-   * Toggles the ChatTodoPanel via mittBus event.
+   * Register matter icon in chat header (right side).
+   * Toggles the ChatMatterPanel via mittBus event.
    */
   private registerChatHeaderIcon(): void {
     WKApp.endpoints.registerChannelHeaderRightItem(
@@ -226,13 +226,13 @@ export default class TodoModule implements IModule {
         }
         return (
           <div
-            key="todo-icon"
+            key="matter-icon"
             onClick={(e) => {
               e.stopPropagation();
               WKApp.mittBus.emit('wk:toggle-todo-panel', { channelId: channel.channelID, channelType: channel.channelType });
             }}
             style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-            title="任务列表"
+            title="事项"
           >
             <ChecklistIcon />
           </div>
@@ -244,7 +244,7 @@ export default class TodoModule implements IModule {
 }
 
 /**
- * Chat toolbar Todo button.
+ * Chat toolbar Matter button.
  * Emits 'wk:open-create-task-modal' — handled by GlobalTodoModal.
  */
 function ChatToolbarTodoButton({ ctx }: { ctx: ConversationContext }) {
@@ -268,7 +268,7 @@ function ChatToolbarTodoButton({ ctx }: { ctx: ConversationContext }) {
 
   return (
     <div
-      title="创建任务"
+      title="创建事项"
       style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
       onClick={handleOpen}
     >
@@ -288,7 +288,7 @@ function mountGlobalTodoModal() {
   if (_globalTodoModalMounted) return;
   _globalTodoModalMounted = true;
   const container = document.createElement('div');
-  container.id = 'todo-global-modal-root';
+  container.id = 'matter-global-modal-root';
   document.body.appendChild(container);
   _globalTodoModalRoot = ReactDOM.createRoot(container);
   _globalTodoModalRoot.render(<GlobalTodoModal />);
@@ -323,11 +323,11 @@ function GlobalTodoModal() {
     if (window.confirm('有未保存的修改，确定放弃？')) setOpen(false);
   };
 
-  const handleConfirm = async (req: Parameters<typeof createTodo>[0]) => {
+  const handleConfirm = async (req: Parameters<typeof createMatter>[0]) => {
     try {
-      await createTodo(req);
+      await createMatter(req);
     } catch (e) {
-      Toast.error('创建任务失败');
+      Toast.error('创建事项失败');
       throw e; // re-throw 让 CreateTaskModal 保持打开
     }
     // Send input content (with mention) + clear when triggered from toolbar / Alt+Enter
@@ -338,7 +338,7 @@ function GlobalTodoModal() {
         channelType: payload.channelType,
       });
     }
-    Toast.success('任务已创建');
+    Toast.success('事项已创建');
     setOpen(false);
   };
 

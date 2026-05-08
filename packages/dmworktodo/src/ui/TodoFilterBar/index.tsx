@@ -1,20 +1,21 @@
 import React, { useCallback, useRef, useEffect, useState } from 'react';
-import type { TodoListParams, TodoStatus } from '../../bridge/types';
+import type { MatterListParams, MatterStatus } from '../../bridge/types';
 import './index.css';
 
-export interface TodoFilterBarProps {
-  filters: TodoListParams;
-  onFilterChange: (filters: Partial<TodoListParams>) => void;
+export interface MatterFilterBarProps {
+  filters: MatterListParams;
+  onFilterChange: (filters: Partial<MatterListParams>) => void;
   searchOnly?: boolean;
 }
 
 const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: '全部' },
   { value: 'open', label: '待处理' },
-  { value: 'closed', label: '已完成' },
+  { value: 'done', label: '已完成' },
+  { value: 'archived', label: '已归档' },
 ];
 
-export default function TodoFilterBar({ filters, onFilterChange, searchOnly = false }: TodoFilterBarProps) {
+export default function MatterFilterBar({ filters, onFilterChange, searchOnly = false }: MatterFilterBarProps) {
   const [localSearch, setLocalSearch] = useState(filters.q || '');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -26,7 +27,7 @@ export default function TodoFilterBar({ filters, onFilterChange, searchOnly = fa
   const handleStatusChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
-      onFilterChange({ status: (value || undefined) as TodoStatus | undefined });
+      onFilterChange({ status: (value || undefined) as MatterStatus | undefined });
     },
     [onFilterChange],
   );
@@ -51,10 +52,10 @@ export default function TodoFilterBar({ filters, onFilterChange, searchOnly = fa
   }, []);
 
   return (
-    <div className="wk-todo-filter-bar">
+    <div className="wk-matter-filter-bar">
       {!searchOnly && (
         <select
-          className="wk-todo-filter-bar__select"
+          className="wk-matter-filter-bar__select"
           value={filters.status || ''}
           onChange={handleStatusChange}
         >
@@ -66,9 +67,9 @@ export default function TodoFilterBar({ filters, onFilterChange, searchOnly = fa
         </select>
       )}
       <input
-        className="wk-todo-filter-bar__search"
+        className="wk-matter-filter-bar__search"
         type="text"
-        placeholder="搜索任务..."
+        placeholder="搜索事项..."
         value={localSearch}
         onChange={handleSearchChange}
       />
@@ -76,4 +77,4 @@ export default function TodoFilterBar({ filters, onFilterChange, searchOnly = fa
   );
 }
 
-export { TodoFilterBar };
+export { MatterFilterBar };

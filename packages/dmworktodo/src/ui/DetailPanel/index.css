@@ -1,6 +1,6 @@
 /* ─── DetailPanel 样式 ────────────────────────────────── */
 
-.wk-todo-side-panel {
+.wk-matter-side-panel {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -9,7 +9,7 @@
   box-sizing: border-box;
 }
 
-.wk-todo-side-panel__body {
+.wk-matter-side-panel__body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -18,13 +18,13 @@
   padding: 16px;
 }
 
-.wk-todo-detail__meta {
+.wk-matter-detail__meta {
   width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
 }
 
-/* 任务名编辑输入框 */
+/* 事项名编辑输入框 */
 .wk-detail-panel__title-input {
   width: 100%;
   font-size: 18px;
@@ -113,7 +113,7 @@
   border-color: var(--wk-brand-primary, #7C5CFC);
 }
 
-.wk-todo-detail__action-btn {
+.wk-matter-detail__action-btn {
   padding: 0;
   border: none;
   background: transparent;
@@ -127,12 +127,12 @@
   box-shadow: none;
 }
 
-.wk-todo-detail__action-btn:hover {
+.wk-matter-detail__action-btn:hover {
   color: #7C5CFC;
 }
 
 /* DatePicker 对齐其他 input 样式 */
-.wk-todo-side-panel .semi-input-wrapper {
+.wk-matter-side-panel .semi-input-wrapper {
   width: 100% !important;
   max-width: 100% !important;
   background: #fff !important;
@@ -142,13 +142,13 @@
   box-sizing: border-box !important;
 }
 
-.wk-todo-side-panel .semi-input-wrapper:hover,
-.wk-todo-side-panel .semi-input-wrapper-focus {
+.wk-matter-side-panel .semi-input-wrapper:hover,
+.wk-matter-side-panel .semi-input-wrapper-focus {
   border-color: #7C5CFC !important;
   box-shadow: none !important;
 }
 
-.wk-todo-side-panel .semi-input {
+.wk-matter-side-panel .semi-input {
   background: transparent !important;
   font-size: 13px !important;
 }
