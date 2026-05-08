@@ -170,7 +170,7 @@ export const LongValue: Story = {
 export const ShortValue: Story = {
     args: {
         icon: <Activity />,
-        label="使用端口",
+        label: "使用端口",
         value: "3100",
     },
 };
