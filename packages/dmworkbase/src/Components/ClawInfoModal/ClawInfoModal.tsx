@@ -128,6 +128,18 @@ export default function ClawInfoModal({ botId, botName, visible, onClose }: Claw
     };
     const channelDisplay = channelMap[s.channel] || s.channel;
 
+    // 对话类型映射（peer_type: private -> 私聊, group -> 群聊）
+    const peerTypeMap: Record<string, string> = {
+      private: "私聊",
+      group: "群聊",
+    };
+    const peerTypeText = peerTypeMap[s.peer_type] || "";
+
+    // 拼接渠道和对话类型：dmwork（私聊）
+    const channelWithType = peerTypeText
+      ? `${channelDisplay}（${peerTypeText}）`
+      : channelDisplay;
+
     // 状态映射
     const statusMap: Record<string, "active" | "idle" | "closed"> = {
       running: "active",
@@ -140,7 +152,7 @@ export default function ClawInfoModal({ botId, botName, visible, onClose }: Claw
       key: s.session_key,
       status: mappedStatus,
       running: s.status === "running",
-      channel: channelDisplay,
+      channel: channelWithType,
       party: s.peer_name,
       botName: botName || "未知 Bot", // 使用传入的 Bot 名称
       botId: botId,
