@@ -85,7 +85,7 @@ export default function ClawInfoModal({ botId, visible, onClose }: ClawInfoModal
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<AgentCardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "session" | "files">("session");
+  const [activeTab, setActiveTab] = useState<"overview" | "session" | "files">("overview");
 
   useEffect(() => {
     if (visible && botId) {
