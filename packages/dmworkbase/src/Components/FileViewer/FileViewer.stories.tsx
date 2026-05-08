@@ -286,3 +286,34 @@ export const SingleGroup: Story = {
     defaultFile: 'IDENTITY.md',
   },
 };
+
+/**
+ * 自定义高度 - 使用百分比
+ */
+export const CustomHeightPercent: Story = {
+  args: {
+    groups: mockGroups,
+    onFetchFile: mockFetchFile,
+    defaultFile: 'MEMORY.md',
+    height: '100%',
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ height: '600px', padding: '20px' }}>
+        <Story />
+      </div>
+    ),
+  ],
+};
+
+/**
+ * 自定义高度 - 使用 calc
+ */
+export const CustomHeightCalc: Story = {
+  args: {
+    groups: mockGroups,
+    onFetchFile: mockFetchFile,
+    defaultFile: 'TOOLS.md',
+    height: 'calc(100vh - 200px)',
+  },
+};

@@ -38,6 +38,8 @@ export interface FileViewerProps {
   onFetchFile: (path: string) => Promise<FileContent>;
   /** 默认选中的文件路径 */
   defaultFile?: string;
+  /** 容器高度（CSS 值，如 "480px" / "100%" / "calc(100vh - 200px)"），默认 "480px" */
+  height?: string;
 }
 
 /**
@@ -74,6 +76,7 @@ export default function FileViewer({
   groups,
   onFetchFile,
   defaultFile,
+  height = '480px',
 }: FileViewerProps) {
   const [activePath, setActivePath] = useState<string>(
     defaultFile || groups[0]?.files[0]?.path || ''
@@ -121,38 +124,40 @@ export default function FileViewer({
   };
 
   return (
-    <div className="files-layout" data-testid="file-viewer">
+    <div className="files-layout" data-testid="file-viewer" style={{ height }}>
       {/* 左侧目录 */}
       <div className="files-sidebar" data-testid="file-sidebar">
         <div className="files-sidebar-head">核心文件 · {groups.length} 类</div>
-        {groups.map((group, gIdx) => (
-          <div className="files-group" key={gIdx} data-testid={`file-group-${gIdx}`}>
-            <div className="files-group-label">{group.label}</div>
-            {group.files.map((file, fIdx) => (
-              <div
-                className={`file-item ${file.path === activePath ? 'active' : ''}`}
-                key={fIdx}
-                onClick={() => handleFileClick(file.path)}
-                data-testid={`file-item-${file.path}`}
-              >
-                <svg
-                  className="fi-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+        <div className="files-sidebar-body">
+          {groups.map((group, gIdx) => (
+            <div className="files-group" key={gIdx} data-testid={`file-group-${gIdx}`}>
+              <div className="files-group-label">{group.label}</div>
+              {group.files.map((file, fIdx) => (
+                <div
+                  className={`file-item ${file.path === activePath ? 'active' : ''}`}
+                  key={fIdx}
+                  onClick={() => handleFileClick(file.path)}
+                  data-testid={`file-item-${file.path}`}
                 >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-                <span className="fi-name">{file.name}</span>
-                <span className="fi-size">{file.size}</span>
-              </div>
-            ))}
-          </div>
-        ))}
+                  <svg
+                    className="fi-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span className="fi-name">{file.name}</span>
+                  <span className="fi-size">{file.size}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 右侧预览 */}
