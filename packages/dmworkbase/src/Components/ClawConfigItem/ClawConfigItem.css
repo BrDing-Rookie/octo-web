@@ -1,0 +1,48 @@
+/* ConfigItem - OpenClaw 配置信息展示组件 */
+
+.wk-config-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* 左侧图标容器 */
+.wk-config-item__icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.04); /* 对应 HTML 设计稿的 background: rgba(0,0,0,0.04) */
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 图标 SVG 统一尺寸和颜色 */
+.wk-config-item__icon svg {
+    width: 16px;
+    height: 16px;
+    color: var(--wk-text-tertiary, rgba(0, 0, 0, 0.40)); /* 对应 HTML 设计稿的 --t3: rgba(0,0,0,0.40) */
+}
+
+/* 右侧内容区域 */
+.wk-config-item__content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0; /* 允许 flex 子元素收缩 */
+}
+
+/* 标签（上） */
+.wk-config-item__label {
+    font-size: 11px;
+    color: var(--wk-text-tertiary, rgba(0, 0, 0, 0.40)); /* 对应 HTML 设计稿的 --t3 */
+    margin-bottom: 2px;
+}
+
+/* 值（下） */
+.wk-config-item__value {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--wk-text-primary, rgba(0, 0, 0, 0.75)); /* 对应 HTML 设计稿的 --t1 */
+}
