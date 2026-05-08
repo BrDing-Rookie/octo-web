@@ -345,8 +345,14 @@ export class Conversation
     };
     WKSDK.shared().taskManager.addListener(taskListener);
 
+    let pendingAck: any = null;
     const ackListener = (ackPacket: any) => {
-      if (clientSeq !== null && ackPacket.clientSeq === clientSeq) {
+      if (clientSeq === null) {
+        // ack 在 sendMessage await 期间到达，暂存等 clientSeq 赋值后补查
+        pendingAck = ackPacket;
+        return;
+      }
+      if (ackPacket.clientSeq === clientSeq) {
         done();
       }
     };
@@ -356,19 +362,27 @@ export class Conversation
     const message = await this.sendMessage(content, channel);
     clientSeq = message.clientSeq;
 
-    // sendMessage 返回后主动检查：task 可能在 clientSeq 为 null 期间已经 fail 了
+    // sendMessage 返回后主动检查
     if (!settled) {
-      const taskMap = (WKSDK.shared().taskManager as any).taskMap as
-        | Map<string, any>
-        | undefined;
-      const existingTask = taskMap?.get(message.clientMsgNo);
-      if (existingTask && existingTask.status === TaskStatus.fail) {
+      // 检查暂存的 ack（ack 在 clientSeq 赋值前到达的情况）
+      if (pendingAck && pendingAck.clientSeq === clientSeq) {
         done();
       }
-      // 如果 task 已 success 且 ack 也到了，ackListener 在 clientSeq 赋值前
-      // 不会匹配（guard: clientSeq !== null）。但 ack 到了之后 vm 的
-      // updateMessageStatusBySendAck 会设置 message.status = MessageStatus.Normal。
-      // 检查这个状态来捕获"两个 listener 都错过"的极端情况。
+      // 检查 task 是否已 fail
+      if (!settled) {
+        try {
+          const taskMap = (WKSDK.shared().taskManager as any).taskMap as
+            | Map<string, any>
+            | undefined;
+          const existingTask = taskMap?.get(message.clientMsgNo);
+          if (existingTask && existingTask.status === TaskStatus.fail) {
+            done();
+          }
+        } catch {
+          // SDK 内部结构变更时不 crash
+        }
+      }
+      // 最终 fallback：检查 message.status（VM 可能已经处理了 ack）
       if (!settled && message.status === MessageStatus.Normal) {
         done();
       }
@@ -410,8 +424,13 @@ export class Conversation
     const timer = setTimeout(done, TIMEOUT);
 
     // 在 sendMessage 之前注册 listener，避免快速 ack 竞态
+    let pendingAck: any = null;
     const statusListener = (ackPacket: any) => {
-      if (clientSeq !== null && ackPacket.clientSeq === clientSeq) {
+      if (clientSeq === null) {
+        pendingAck = ackPacket;
+        return;
+      }
+      if (ackPacket.clientSeq === clientSeq) {
         done();
       }
     };
@@ -420,9 +439,14 @@ export class Conversation
     const message = await this.sendMessage(content, channel);
     clientSeq = message.clientSeq;
 
-    // fallback：如果 ack 在 sendMessage 执行期间已经到达并处理
-    if (!settled && message.status === MessageStatus.Normal) {
-      done();
+    // fallback：检查暂存的 ack 或已处理的 status
+    if (!settled) {
+      if (pendingAck && pendingAck.clientSeq === clientSeq) {
+        done();
+      }
+      if (!settled && message.status === MessageStatus.Normal) {
+        done();
+      }
     }
 
     await promise;
@@ -2134,6 +2158,7 @@ export class Conversation
                               }
                             } catch (err) {
                               console.error('[Conversation] editorBlock send failed:', err);
+                              Toast.error("消息发送失败");
                             }
                           }
                           // 如果 reply 还没被消费（没有文本块），附加到一条空白消息
