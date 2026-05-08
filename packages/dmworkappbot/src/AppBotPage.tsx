@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Channel, ChannelTypePerson, ChannelInfo, WKSDK } from "wukongimjssdk"
 import { WKApp, Conversation, SpaceService } from "@octo/base"
 import "./AppBotPage.css"
@@ -161,7 +161,6 @@ export default function AppBotPage() {
     resolveSpaceName()
 
     const handler = () => {
-      stale = false
       setSelectedUid(null)
       WKApp.routeRight.popToRoot()
       loadData()
@@ -183,14 +182,19 @@ export default function AppBotPage() {
   const platformBots = useMemo(() => filtered.filter((b) => b.scope === "platform"), [filtered])
   const spaceBots = useMemo(() => filtered.filter((b) => b.scope === "space"), [filtered])
 
+  const isSelectingRef = useRef(false)
+
   const handleSelect = async (bot: AppBotInfo) => {
-    // Ensure friend relationship with bot (opt-in consent).
-    // This is idempotent — already-friends returns OK immediately.
+    if (isSelectingRef.current) return
+    isSelectingRef.current = true
     try {
+      // Ensure friend relationship with bot (opt-in consent).
+      // This is idempotent — already-friends returns OK immediately.
       await WKApp.apiClient.post("/app_bot/apply", { robot_uid: bot.uid })
     } catch (err) {
       console.error("[AppBotPage] app_bot/apply failed:", err)
       showErrorToast("无法连接到该应用，请稍后重试")
+      isSelectingRef.current = false
       return
     }
 
@@ -222,6 +226,7 @@ export default function AppBotPage() {
         <Conversation channel={channel} />
       </div>
     )
+    isSelectingRef.current = false
   }
 
   const renderItem = (bot: AppBotInfo) => {
