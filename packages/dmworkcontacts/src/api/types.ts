@@ -9,8 +9,8 @@ export type SessionStatus = 'running' | 'idle' | 'stopped';
 /** 对话类型 */
 export type PeerType = 'private' | 'group';
 
-/** 渠道类型 */
-export type ChannelType = 'octo' | 'discord' | 'dmwork' | 'telegram';
+/** 渠道类型（使用 string 以支持未来扩展新渠道） */
+export type ChannelType = string;
 
 /** 核心文件分类 */
 export type CoreFileCategory = 'identity' | 'tools' | 'config';

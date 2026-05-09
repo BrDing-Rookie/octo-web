@@ -98,8 +98,8 @@ export default class BotDetailModal extends Component<BotDetailModalProps, BotDe
         } catch (error) {
             if (isStale()) return;
             console.error("[BotDetailModal] loadReportStatus failed:", error);
-            // 网络错误，默认为未上报
-            this.setState({ reported: false });
+            // 网络错误时不设置 reported，避免误导用户
+            // reported 保持 null，不显示 OctoPush chip 和龙虾按钮
         } finally {
             if (!isStale()) {
                 this.setState({ reportStatusLoading: false });

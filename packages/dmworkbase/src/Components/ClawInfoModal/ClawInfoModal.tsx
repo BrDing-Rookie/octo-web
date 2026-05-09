@@ -78,10 +78,12 @@ export default function ClawInfoModal({ botId, botName, visible, onClose }: Claw
     };
   }, [visible, botId]);
 
-  // 弹窗关闭时重置 Tab 到默认（概览）
+  // 弹窗关闭时重置状态，避免下次打开时闪现旧数据
   useEffect(() => {
     if (!visible) {
       setActiveTab("overview");
+      setData(null);
+      setError(null);
     }
   }, [visible]);
 
