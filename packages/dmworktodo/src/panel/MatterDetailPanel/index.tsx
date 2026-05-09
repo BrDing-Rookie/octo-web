@@ -1,5 +1,5 @@
-﻿import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import type { MatterDetail, MatterStatus, MatterChannel as MatterChannelModel } from '../../bridge/types';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
+import type { MatterDetail, MatterStatus } from '../../bridge/types';
 import { getMatter, transitionMatter } from '../../api/todoApi';
 import { Toast } from '../../utils/toast';
 import './index.css';
@@ -7,7 +7,7 @@ import './index.css';
 export interface MatterDetailPanelProps {
   channelId: string;
   channelType: number;
-  /** 鐩存帴浼犲叆 matter ID锛堜粠鍒楄〃鐐瑰嚮杩涘叆鏃讹級 */
+  /** 直接传入 matter ID（从列表点击进入时） */
   matterId?: string;
   onClose: () => void;
 }
@@ -15,10 +15,10 @@ export interface MatterDetailPanelProps {
 type TabKey = 'channels' | 'outputs' | 'changelog';
 
 /**
- * MatterDetailPanel 鈥?浜嬮」璇︽儏闈㈡澘
+ * MatterDetailPanel — 事项详情面板
  *
- * 鏁版嵁鏉ユ簮锛欸ET /matters/:id 鐪熷疄 API
- * 涓?tab锛氬叧鑱旂兢鑱?/ 浜у嚭鏂囦欢 / 鍙樻洿璁板綍锛堝悗绔殏涓嶆敮鎸佺殑鏄剧ず绌烘€侊級
+ * 数据来源：GET /matters/:id 真实 API
+ * 三 tab：关联群聊 / 产出文件 / 变更记录（后端暂不支持的显示空态）
  */
 export default function MatterDetailPanel({ channelId, channelType, matterId, onClose }: MatterDetailPanelProps) {
   const [matter, setMatter] = useState<MatterDetail | null>(null);
@@ -26,7 +26,7 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>('channels');
 
-  // 鑾峰彇 matter 璇︽儏
+  // 获取 matter 详情
   useEffect(() => {
     if (!matterId) {
       setMatter(null);
@@ -39,42 +39,42 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
         setMatter(detail);
       })
       .catch((err) => {
-        setError(err?.message || '鍔犺浇澶辫触');
+        setError(err?.message || '加载失败');
         setMatter(null);
       })
       .finally(() => setLoading(false));
   }, [matterId, channelId]);
 
-  // 鐘舵€佸垏鎹?
+  // 状态切换
   const handleStatusChange = useCallback(async (newStatus: MatterStatus) => {
     if (!matter) return;
     const oldStatus = matter.status;
-    // 涔愯鏇存柊
+    // 乐观更新
     setMatter((prev) => prev ? { ...prev, status: newStatus } : prev);
     try {
       const updated = await transitionMatter(matter.id, newStatus);
       setMatter(updated);
     } catch {
-      // 鍥炴粴
+      // 回滚
       setMatter((prev) => prev ? { ...prev, status: oldStatus } : prev);
-      Toast.error('鐘舵€佷慨鏀瑰け璐?);
+      Toast.error('状态修改失败');
     }
   }, [matter]);
 
-  // 绌烘€?/ 鍔犺浇鎬?
+  // 空态
   if (!matterId) {
     return (
       <div className="wk-mp">
         <div className="wk-mp-head">
           <div className="wk-mp-head__row1">
-            <span className="wk-mp-head__id">浜嬮」</span>
+            <span className="wk-mp-head__id">事项</span>
             <div className="wk-mp-head__actions">
-              <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="鍏抽棴">鉁?/button>
+              <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="关闭">✕</button>
             </div>
           </div>
         </div>
         <div className="wk-mp__scroll">
-          <div className="wk-mp-empty">閫夋嫨涓€涓簨椤规煡鐪嬭鎯?/div>
+          <div className="wk-mp-empty">选择一个事项查看详情</div>
         </div>
       </div>
     );
@@ -85,9 +85,9 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
       <div className="wk-mp">
         <div className="wk-mp-head">
           <div className="wk-mp-head__row1">
-            <span className="wk-mp-head__id">鍔犺浇涓?..</span>
+            <span className="wk-mp-head__id">加载中...</span>
             <div className="wk-mp-head__actions">
-              <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="鍏抽棴">鉁?/button>
+              <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="关闭">✕</button>
             </div>
           </div>
         </div>
@@ -100,14 +100,14 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
       <div className="wk-mp">
         <div className="wk-mp-head">
           <div className="wk-mp-head__row1">
-            <span className="wk-mp-head__id">浜嬮」</span>
+            <span className="wk-mp-head__id">事项</span>
             <div className="wk-mp-head__actions">
-              <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="鍏抽棴">鉁?/button>
+              <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="关闭">✕</button>
             </div>
           </div>
         </div>
         <div className="wk-mp__scroll">
-          <div className="wk-mp-empty">{error || '浜嬮」涓嶅瓨鍦?}</div>
+          <div className="wk-mp-empty">{error || '事项不存在'}</div>
         </div>
       </div>
     );
@@ -117,9 +117,9 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
   const assignees = matter.assignees || [];
 
   const tabs: { id: TabKey; label: string; count: number }[] = [
-    { id: 'channels', label: '鍏宠仈缇よ亰', count: channels.length },
-    { id: 'outputs', label: '浜у嚭鏂囦欢', count: 0 },
-    { id: 'changelog', label: '鍙樻洿璁板綍', count: 0 },
+    { id: 'channels', label: '关联群聊', count: channels.length },
+    { id: 'outputs', label: '产出文件', count: 0 },
+    { id: 'changelog', label: '变更记录', count: 0 },
   ];
 
   return (
@@ -131,28 +131,28 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
           <StatusPicker status={matter.status} onChange={handleStatusChange} />
           {matter.deadline && (
             <span className="wk-mp-head__ddl">
-              <span className="wk-mp-head__ddl-label">鎴</span>
+              <span className="wk-mp-head__ddl-label">截止</span>
               <span className="wk-mp-head__ddl-value">{new Date(matter.deadline).toLocaleDateString('zh-CN')}</span>
             </span>
           )}
           <div className="wk-mp-head__actions">
-            <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="鍏抽棴">鉁?/button>
+            <button type="button" className="wk-mp-head__close" onClick={onClose} aria-label="关闭">✕</button>
           </div>
         </div>
         <h2 className="wk-mp-head__title">{matter.title}</h2>
         <div className="wk-mp-head__meta">
-          <span>鍒涘缓: {matter.creator_id.slice(0, 8)}</span>
+          <span>创建: {matter.creator_id.slice(0, 8)}</span>
           {assignees.length > 0 && (
-            <span> 路 璐熻矗: {assignees.map((a) => a.user_id.slice(0, 8)).join(', ')}</span>
+            <span> · 负责: {assignees.map((a) => a.user_id.slice(0, 8)).join(', ')}</span>
           )}
-          {matter.source_name && <span> 路 #{matter.source_name}</span>}
+          {matter.source_name && <span> · #{matter.source_name}</span>}
         </div>
       </div>
 
-      {/* 涓昏鐩爣 */}
+      {/* 主要目标 */}
       {matter.description && (
         <div className="wk-mp-goal">
-          <div className="wk-mp-goal__label">涓昏鐩爣</div>
+          <div className="wk-mp-goal__label">主要目标</div>
           <div className="wk-mp-goal__text">{matter.description}</div>
         </div>
       )}
@@ -179,13 +179,13 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
         {tab === 'channels' && (
           <div className="wk-mp-tab-content">
             {channels.length === 0 ? (
-              <div className="wk-mp-empty">鏆傛棤鍏宠仈缇よ亰</div>
+              <div className="wk-mp-empty">暂无关联群聊</div>
             ) : (
               channels.map((ch) => (
                 <div key={ch.id} className="wk-mp-channel-item">
                   <span className="wk-mp-channel-item__name">#{ch.channel_name || ch.channel_id}</span>
                   <span className="wk-mp-channel-item__type">
-                    {ch.channel_type === 2 ? '缇ょ粍' : ch.channel_type === 1 ? '绉佽亰' : '瀛愬尯'}
+                    {ch.channel_type === 2 ? '群组' : ch.channel_type === 1 ? '私聊' : '子区'}
                   </span>
                 </div>
               ))
@@ -194,12 +194,12 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
         )}
         {tab === 'outputs' && (
           <div className="wk-mp-tab-content">
-            <div className="wk-mp-empty">浜у嚭鏂囦欢鍔熻兘鍗冲皢涓婄嚎</div>
+            <div className="wk-mp-empty">产出文件功能即将上线</div>
           </div>
         )}
         {tab === 'changelog' && (
           <div className="wk-mp-tab-content">
-            <div className="wk-mp-empty">鍙樻洿璁板綍鍔熻兘鍗冲皢涓婄嚎</div>
+            <div className="wk-mp-empty">变更记录功能即将上线</div>
           </div>
         )}
       </div>
@@ -209,12 +209,12 @@ export default function MatterDetailPanel({ channelId, channelType, matterId, on
 
 export { MatterDetailPanel };
 
-// 鈹€鈹€鈹€ StatusPicker 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ─── StatusPicker ─────────────────────────────────────────
 
 const STATUS_OPTIONS: { value: MatterStatus; label: string }[] = [
-  { value: 'open', label: '杩涜涓? },
-  { value: 'done', label: '宸插畬鎴? },
-  { value: 'archived', label: '宸插綊妗? },
+  { value: 'open', label: '进行中' },
+  { value: 'done', label: '已完成' },
+  { value: 'archived', label: '已归档' },
 ];
 
 function StatusPicker({ status, onChange }: { status: MatterStatus; onChange: (s: MatterStatus) => void }) {
