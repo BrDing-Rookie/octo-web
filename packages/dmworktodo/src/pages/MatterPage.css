@@ -18,6 +18,9 @@
 
 .wk-mp-page-sidebar__header {
   padding: var(--wk-sp-4) var(--wk-sp-4) var(--wk-sp-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .wk-mp-page-sidebar__title {
@@ -25,6 +28,30 @@
   font-weight: 600;
   color: var(--wk-text-primary);
   margin: 0;
+}
+
+.wk-mp-page-sidebar__new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wk-sp-1);
+  font-size: var(--wk-text-size-xs);
+  padding: var(--wk-sp-1) var(--wk-sp-2);
+  border-radius: var(--wk-r-sm);
+  background: var(--wk-brand-primary);
+  color: var(--wk-text-on-brand);
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background var(--wk-dur-fast);
+}
+
+.wk-mp-page-sidebar__new-btn:hover {
+  background: var(--wk-brand-primary-hover);
+}
+
+.wk-mp-page-sidebar__new-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ─── Tabs ─────────────────────────────────────────────── */
@@ -235,4 +262,22 @@
 
 .wk-mp-sidebar-card__channel {
   color: var(--wk-text-tertiary);
+}
+
+.wk-mp-sidebar-card__meta-label {
+  color: var(--wk-border-default);
+  font-size: var(--wk-text-size-xs);
+}
+
+.wk-mp-sidebar-card__owners {
+  display: flex;
+  align-items: center;
+  gap: var(--wk-sp-1-5);
+  font-size: var(--wk-text-size-xs);
+  color: var(--wk-text-tertiary);
+  margin-top: var(--wk-sp-1);
+}
+
+.wk-mp-sidebar-card__owners-label {
+  color: var(--wk-border-default);
 }

@@ -220,3 +220,21 @@
 .wk-matter-list-card__channel {
   color: var(--wk-text-tertiary);
 }
+
+.wk-matter-list-card__meta-label {
+  color: var(--wk-border-default);
+  font-size: var(--wk-text-size-xs);
+}
+
+.wk-matter-list-card__owners {
+  display: flex;
+  align-items: center;
+  gap: var(--wk-sp-1-5);
+  font-size: var(--wk-text-size-xs);
+  color: var(--wk-text-tertiary);
+  margin-top: var(--wk-sp-1);
+}
+
+.wk-matter-list-card__owners-label {
+  color: var(--wk-border-default);
+}

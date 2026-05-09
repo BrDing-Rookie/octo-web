@@ -157,12 +157,17 @@ function MatterListCard({
       <div className="wk-matter-list-card__meta">
         {/* TODO: 用 UserName 组件解析 creator_id → 显示名 */}
         <span className="wk-matter-list-card__creator">{matter.creator_id.slice(0, 6)}</span>
+        <span className="wk-matter-list-card__meta-label">创建</span>
         {matter.source_name && (
           <>
             <span className="wk-matter-list-card__sep">·</span>
             <span className="wk-matter-list-card__channel">#{matter.source_name}</span>
           </>
         )}
+      </div>
+      {/* TODO: owners 行需要后端返回 assignee 名字列表 */}
+      <div className="wk-matter-list-card__owners">
+        <span className="wk-matter-list-card__owners-label">负责</span>
       </div>
     </button>
   );

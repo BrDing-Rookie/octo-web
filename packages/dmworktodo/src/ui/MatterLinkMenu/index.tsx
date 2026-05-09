@@ -85,7 +85,7 @@ class MatterLinkMenu extends Component<MatterLinkMenuProps> {
         style={style}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="wk-matter-link-menu__head">消息处理</div>
+        <div className="wk-matter-link-menu__head">当前群聊关联的任务</div>
         <button
           type="button"
           className="wk-matter-link-menu__item wk-matter-link-menu__item--primary"
@@ -108,10 +108,10 @@ class MatterLinkMenu extends Component<MatterLinkMenuProps> {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          <span>创建新事项 (智能)</span>
+          <span>创建新事项</span>
         </button>
         <div className="wk-matter-link-menu__divider" />
-        <div className="wk-matter-link-menu__sub">→ 同步到已有事项</div>
+        <div className="wk-matter-link-menu__sub">同步到已有事项</div>
         {matters.map((m) => (
           <button
             key={m.id}

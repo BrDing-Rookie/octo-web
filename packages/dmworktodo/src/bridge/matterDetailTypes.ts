@@ -142,7 +142,10 @@ export interface MatterDetail {
     title: string;
     status: MatterStatus;
     creator: string;
-    owner: string;
+    /** 多负责人（v0.7+ 支持多人） */
+    owners: string[];
+    /** @deprecated 兼容旧数据，优先用 owners */
+    owner?: string;
     /** Deadline 友好文本（例："5/15 周四"），DB 真实字段应该是 ISO */
     ddl: string;
     /** 关联的 channel/thread 显示名称列表 */

@@ -188,6 +188,31 @@
   color: var(--wk-text-tertiary);
 }
 
+.wk-mp-head__owners {
+  margin-top: var(--wk-sp-1-5);
+  display: flex;
+  align-items: center;
+  gap: var(--wk-sp-1-5);
+  font-size: var(--wk-text-size-sm);
+  color: var(--wk-text-tertiary);
+}
+
+.wk-mp-head__owners-avatars {
+  display: inline-flex;
+  align-items: center;
+}
+
+.wk-mp-head__owners-avatar-wrap {
+  display: inline-flex;
+  margin-left: -5px;
+  border: 1.5px solid var(--wk-bg-surface);
+  border-radius: var(--wk-r-circle);
+}
+
+.wk-mp-head__owners-avatar-wrap:first-child {
+  margin-left: 0;
+}
+
 /* ─── Avatar（Matter 模块专用原子） ─────────────────────── */
 
 .wk-mp-avatar {

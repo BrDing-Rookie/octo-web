@@ -163,6 +163,19 @@ function Head({
         <span>{matter.creator}</span>
         <span className="wk-mp-head__creator-label">创建人</span>
       </div>
+      {matter.owners && matter.owners.length > 0 && (
+        <div className="wk-mp-head__owners">
+          <span className="wk-mp-head__owners-avatars">
+            {matter.owners.map((name, i) => (
+              <span key={name} className="wk-mp-head__owners-avatar-wrap" style={{ zIndex: matter.owners.length - i }}>
+                <Avatar name={name} kind="human" size="sm" />
+              </span>
+            ))}
+          </span>
+          <span>{matter.owners.join('、')}</span>
+          <span className="wk-mp-head__creator-label">负责人</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -2515,7 +2515,18 @@ class MultiplePanel extends Component<MultiplePanelProps> {
           合并转发
         </button>
         <div className="wk-multiplepanel-sep" />
-        {/* 添加到事项 — 点击由调用方弹出菜单（dmworktodo 模块接管） */}
+        {/* 创建新事项 — 从多选消息智能创建（PRD §3） */}
+        <button
+          className="wk-multiplepanel-btn wk-multiplepanel-btn--matter"
+          onClick={() => {
+            // TODO(interaction): 打开 SmartCreateModal，传入选中消息
+          }}
+          title="创建新事项"
+        >
+          创建新事项
+        </button>
+        <div className="wk-multiplepanel-sep" />
+        {/* 同步到任务 — 点击由调用方弹出菜单（dmworktodo 模块接管） */}
         <button
           ref={this.matterBtnRef}
           className="wk-multiplepanel-btn wk-multiplepanel-btn--matter"
@@ -2524,9 +2535,9 @@ class MultiplePanel extends Component<MultiplePanelProps> {
               onAddToMatter(this.matterBtnRef.current);
             }
           }}
-          title="添加到事项"
+          title="同步到任务"
         >
-          添加到事项
+          同步到任务
         </button>
         <div className="wk-multiplepanel-sep" />
         <button

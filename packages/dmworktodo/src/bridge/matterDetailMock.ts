@@ -16,6 +16,7 @@ const M_2451: MatterDetail = {
     title: 'Octo 产品策略 PPT 打磨',
     status: 'active',
     creator: '王宜林',
+    owners: ['王宜林', '超哥'],
     owner: '王宜林',
     ddl: '5/15 周四',
     channels: ['#Octo设计群', '#辉哥-DM'],

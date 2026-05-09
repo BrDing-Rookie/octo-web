@@ -93,6 +93,13 @@ export default function MatterPage() {
       {/* Header */}
       <div className="wk-mp-page-sidebar__header">
         <h2 className="wk-mp-page-sidebar__title">事项</h2>
+        {/* TODO(interaction): 点击打开 SmartCreateModal（blank 模式，PRD §3） */}
+        <button type="button" className="wk-mp-page-sidebar__new-btn" disabled title="新建事项（即将上线）">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          新建
+        </button>
       </div>
 
       {/* Tabs */}
@@ -186,12 +193,17 @@ function SidebarCard({
       <div className="wk-mp-sidebar-card__meta">
         {/* TODO: 用 UserName 组件解析 creator_id → 显示名 */}
         <span className="wk-mp-sidebar-card__creator">{matter.creator_id.slice(0, 6)}</span>
+        <span className="wk-mp-sidebar-card__meta-label">创建</span>
         {matter.source_name && (
           <>
             <span className="wk-mp-sidebar-card__sep">·</span>
             <span className="wk-mp-sidebar-card__channel">#{matter.source_name}</span>
           </>
         )}
+      </div>
+      {/* TODO: owners 行需要后端返回 assignee 名字列表，当前用 creator_id 占位 */}
+      <div className="wk-mp-sidebar-card__owners">
+        <span className="wk-mp-sidebar-card__owners-label">负责</span>
       </div>
     </button>
   );
