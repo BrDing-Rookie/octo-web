@@ -1,21 +1,110 @@
 import APIClient from './APIClient';
 import FileHelper from '../Utils/filehelper';
-import type {
-  AgentCardData,
-  RuntimeInfo,
-  SessionInfo,
-  CoreFile,
-  MemoryFile,
-  FileContentData,
-} from '@octo/contacts';
 
 /**
  * AgentCardService
  * 
  * 封装 agent-card-server 接口调用，获取 Agent 运行时信息
- * 
- * 类型定义统一使用 @octo/contacts/api/types
  */
+
+// ========== 类型定义 ==========
+
+/** Session 状态 */
+export type SessionStatus = 'running' | 'idle' | 'stopped';
+
+/** 对话类型 */
+export type PeerType = 'private' | 'group';
+
+/** 渠道类型 */
+export type ChannelType = 'octo' | 'discord' | 'dmwork' | 'telegram' | (string & {});
+
+/** 核心文件分类 */
+export type CoreFileCategory = 'identity' | 'tools' | 'config';
+
+/** 进程状态 */
+export type ProcessStatus = 'running' | 'idle' | 'stopped';
+
+/** Gateway 连接状态 */
+export type GatewayStatus = 'connected' | 'disconnected';
+
+/** 运行时信息 */
+export interface RuntimeInfo {
+  os_version: string;
+  arch: string;
+  disk_space_gb: number;
+  memory_gb: number;
+  app_data_dir: string;
+  claw_version: string;
+  admin_url: string;
+  team_name: string;
+  process_status: ProcessStatus;
+  gateway_status: GatewayStatus;
+  gateway_name: string;
+  claw_id: string;
+  gateway_total_agents: number;
+  gateway_alive_agents: number;
+  nodejs_version: string;
+  network_latency_ms: number;
+  last_heartbeat_at: string;
+  memory_retention_count: number;
+  memory_retention_note: string;
+}
+
+/** Session 信息 */
+export interface SessionInfo {
+  session_id: string;
+  session_key: string;
+  channel: ChannelType;
+  status: SessionStatus;
+  peer_name: string;
+  peer_type: PeerType;
+  group_member_count: number | null;
+  model: string;
+  context_used: number;
+  context_total: number;
+  context_percent: number;
+  last_user_message: string;
+  last_active_at: string;
+}
+
+/** 核心文件 */
+export interface CoreFile {
+  file_name: string;
+  category: CoreFileCategory;
+  file_size: number;
+  content_preview: string;
+  last_synced_at: string;
+}
+
+/** 记忆文件 */
+export interface MemoryFile {
+  file_name: string;
+  file_size: number;
+  content_preview: string;
+  last_synced_at: string;
+}
+
+/** Agent Card 数据 */
+export interface AgentCardData {
+  bot_id: string;
+  session_total: number;
+  session_running_count: number;
+  last_report_at: string;
+  runtime_info: RuntimeInfo;
+  sessions: SessionInfo[];
+  core_files: CoreFile[];
+  memory_files: MemoryFile[];
+}
+
+/** 文件内容数据 */
+export interface FileContentData {
+  file_name: string;
+  file_size: number;
+  content: string;
+  last_synced_at: string;
+}
+
+// ========== FileViewer 相关类型 ==========
 
 /** 文件分组 */
 export interface FileGroup {
@@ -40,9 +129,6 @@ export interface FileContent {
 
 /** Session 别名（兼容旧代码） */
 export type Session = SessionInfo;
-
-/** 导出共享类型 */
-export type { AgentCardData, RuntimeInfo, SessionInfo, CoreFile, MemoryFile };
 
 /** 文件内容响应 */
 export interface FileContentResponse {
