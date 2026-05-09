@@ -140,15 +140,6 @@
   color: var(--wk-text-primary);
 }
 
-.wk-mp-head__iconbtn--fav.is-on {
-  color: var(--wk-color-warning);
-}
-
-.wk-mp-head__iconbtn--fav.is-on:hover {
-  background: var(--wk-color-warning-bg);
-  color: var(--wk-color-warning);
-}
-
 .wk-mp-head__close {
   width: 28px;
   height: 28px;

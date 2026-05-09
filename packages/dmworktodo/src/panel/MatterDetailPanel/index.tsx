@@ -36,7 +36,6 @@ export default function MatterDetailPanel({ channelId, onClose }: MatterDetailPa
   const matter: MatterDetail | undefined = matters[0];
 
   const [tab, setTab] = useState<TabKey>('channels');
-  const [favorited, setFavorited] = useState(false);
   const [statusOverride, setStatusOverride] = useState<MatterStatus | null>(null);
 
   const handleStatusChange = useCallback(async (newStatus: MatterStatus) => {
@@ -89,8 +88,6 @@ export default function MatterDetailPanel({ channelId, onClose }: MatterDetailPa
     <div className="wk-mp">
       <Head
         matter={displayMatter}
-        favorited={favorited}
-        onToggleFavorite={() => setFavorited(!favorited)}
         onClose={onClose}
         onStatusChange={handleStatusChange}
       />
@@ -125,14 +122,10 @@ export default function MatterDetailPanel({ channelId, onClose }: MatterDetailPa
 // ─── Head ────────────────────────────────────────────────
 function Head({
   matter,
-  favorited,
-  onToggleFavorite,
   onClose,
   onStatusChange,
 }: {
   matter: MatterDetail;
-  favorited: boolean;
-  onToggleFavorite: () => void;
   onClose: () => void;
   onStatusChange: (newStatus: MatterStatus) => void;
 }) {
@@ -153,19 +146,6 @@ function Head({
           <span className="wk-mp-head__ddl-value">{matter.ddl}</span>
         </span>
         <div className="wk-mp-head__actions">
-          {/* TODO(interaction): 收藏（前端本地状态，后续对接后端） */}
-          <button
-            type="button"
-            className={`wk-mp-head__iconbtn wk-mp-head__iconbtn--fav ${favorited ? 'is-on' : ''}`}
-            onClick={onToggleFavorite}
-            title={favorited ? '取消关注' : '关注'}
-            aria-label={favorited ? '取消关注' : '关注'}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill={favorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
-            {favorited ? '已关注' : '关注'}
-          </button>
           {/* TODO(interaction): 转发 — 选 channel/thread 发 Matter 卡片（PRD §13[5]） */}
           <button type="button" className="wk-mp-head__iconbtn" title="转发" aria-label="转发">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
