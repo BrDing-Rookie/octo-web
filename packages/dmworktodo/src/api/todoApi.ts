@@ -29,7 +29,7 @@ matterAxios.interceptors.request.use((config) => {
   const token = WKApp.loginInfo.token;
   if (token) {
     config.headers = config.headers ?? {};
-    config.headers['Authorization'] = `Bearer ${token}`;
+    config.headers['token'] = token;
   }
   const spaceId = WKApp.shared.currentSpaceId;
   if (spaceId) {
