@@ -429,6 +429,57 @@ function extractMentionsFromEditor(editor: any): string {
   return stripInvisibleChars(result);
 }
 
+// 解析草稿文本中的 @[uid:label] 格式为 Tiptap 节点数组
+function parseDraftMentions(
+  text: string
+): Array<{
+  type: string;
+  text?: string;
+  attrs?: { id: string; label: string };
+}> {
+  const result: Array<{
+    type: string;
+    text?: string;
+    attrs?: { id: string; label: string };
+  }> = [];
+  
+  // 匹配 @[uid:label] 格式，uid和label可以包含除]外的任意字符
+  const regex = /@\[([^\]:]+):([^\]]+)\]/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const uid = match[1];
+    const label = match[2];
+    const matchStart = match.index;
+
+    // 添加匹配前的普通文本
+    if (matchStart > lastIndex) {
+      result.push({ type: "text", text: text.slice(lastIndex, matchStart) });
+    }
+
+    // 添加 mention 节点
+    result.push({
+      type: "mention",
+      attrs: { id: uid, label: label },
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // 添加剩余的普通文本
+  if (lastIndex < text.length) {
+    result.push({ type: "text", text: text.slice(lastIndex) });
+  }
+
+  // 如果没有匹配到任何 mention，返回原始文本
+  if (result.length === 0) {
+    result.push({ type: "text", text: text });
+  }
+
+  return result;
+}
+
 // 顶部附件区的附件项接口
 interface TopAttachmentItem {
   id: string;
@@ -902,7 +953,9 @@ const MessageInput: React.FC<MessageInputProps> = (props) => {
   const insertText = useCallback(
     (text: string) => {
       if (editor) {
-        editor.commands.insertContent(text);
+        // 解析草稿中的 @[uid:label] 格式为 Tiptap mention 节点
+        const nodes = parseDraftMentions(text);
+        editor.commands.insertContent(nodes);
         editor.commands.focus();
       }
     },
