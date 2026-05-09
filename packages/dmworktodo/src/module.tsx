@@ -93,21 +93,6 @@ function ChecklistIcon() {
 }
 
 /**
- * Matter detail icon for chat header — 事项详情面板入口 (v0.7)
- * 用 stack/hierarchy 风格，跟 ChecklistIcon（列表）区分。
- */
-function MatterDetailIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="5" rx="1.5" />
-      <rect x="3" y="11" width="18" height="9" rx="1.5" />
-      <line x1="7" y1="14.5" x2="15" y2="14.5" />
-      <line x1="7" y1="17" x2="12" y2="17" />
-    </svg>
-  );
-}
-
-/**
  * MatterModule — registers the Matter feature into Octo web.
  */
 export default class MatterModule implements IModule {
@@ -149,9 +134,6 @@ export default class MatterModule implements IModule {
     this.registerChatToolbar();
     this.registerChatMatterPanel();
     this.registerChatHeaderIcon();
-    // v0.7 Matter 详情面板 + header 入口（跟现有事项列表并存）
-    this.registerChatMatterDetailPanel();
-    this.registerChatMatterDetailHeaderIcon();
   }
 
   /**
@@ -267,58 +249,6 @@ export default class MatterModule implements IModule {
     );
   }
 
-  /**
-   * Register v0.7 Matter 详情面板 endpoint（内容由 ChatPage 渲染）
-   */
-  private registerChatMatterDetailPanel(): void {
-    WKApp.endpoints.registerChatMatterDetailPanel(
-      'chatmatterdetailpanel',
-      ({ channel, onClose }) => {
-        if (channel.channelType !== ChannelTypeGroup && channel.channelType !== ChannelTypeCommunityTopic) {
-          return undefined;
-        }
-        return (
-          <MatterDetailPanel
-            channelId={channel.channelID}
-            channelType={channel.channelType}
-            onClose={onClose}
-          />
-        );
-      }
-    );
-  }
-
-  /**
-   * Register v0.7 Matter 详情面板 header 入口按钮
-   * 放在现有事项列表按钮的左边（sort order 更小）
-   */
-  private registerChatMatterDetailHeaderIcon(): void {
-    WKApp.endpoints.registerChannelHeaderRightItem(
-      'channelheader.matterDetail',
-      ({ channel }) => {
-        if (channel.channelType !== ChannelTypeGroup && channel.channelType !== ChannelTypeCommunityTopic) {
-          return undefined;
-        }
-        return (
-          <div
-            key="matter-detail-icon"
-            onClick={(e) => {
-              e.stopPropagation();
-              WKApp.mittBus.emit('wk:toggle-matter-detail-panel', {
-                channelId: channel.channelID,
-                channelType: channel.channelType,
-              });
-            }}
-            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-            title="事项详情"
-          >
-            <MatterDetailIcon />
-          </div>
-        );
-      },
-      4900, // 比 5000 靠前
-    );
-  }
 }
 
 /**
