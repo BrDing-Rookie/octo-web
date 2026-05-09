@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { WKApp } from '@octo/base';
+import { Toast } from '@douyinfe/semi-ui';
 import type { Matter, MatterListParams } from '../bridge/types';
+import { createMatter } from '../api/todoApi';
 import { useMatterList } from '../hooks/useTodoList';
 import MatterDetailPanel from '../panel/MatterDetailPanel';
 import SmartCreateModal from '../ui/SmartCreateModal';
@@ -167,8 +169,8 @@ export default function MatterPage() {
         blank
         onClose={() => setShowCreateModal(false)}
         onConfirm={async (req) => {
-          // TODO(backend): 调用 createMatter API
-          console.log('[Matter] create:', req);
+          await createMatter(req);
+          Toast.success('事项已创建');
         }}
       />
     </div>

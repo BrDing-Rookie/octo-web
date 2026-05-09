@@ -113,12 +113,13 @@ export default defineConfig(({ mode }) => {
           rewrite: (path: string) => path.replace(/^\/summary/, ''),
         },
         // Matters service API — must be before the general /api/ rule
-        // VITE_TODO_API_URL is deprecated — use VITE_MATTER_API_URL instead
+        // When target is the main gateway (nginx), no rewrite needed — nginx routes /matter/* to todos service.
+        // When target is todos service directly (e.g. localhost:3000), set VITE_MATTER_API_URL and add rewrite.
         '/matter/api/v1': {
           target: env.VITE_MATTER_API_URL || env.VITE_TODO_API_URL || apiOrigin,
           changeOrigin: true,
           secure: false,
-          // 不做 rewrite — 后端实际路径就是 /matter/api/v1/*
+          rewrite: env.VITE_MATTER_API_URL ? (path: string) => path.replace(/^\/matter/, '') : undefined,
         },
         '/api/': {
           target: apiOrigin,

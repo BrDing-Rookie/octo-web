@@ -75,9 +75,9 @@ export default function SmartCreateModal({
     try {
       await onConfirm({
         title: title.trim(),
-        description: brief.trim(),
-        assignee_uids: assigneeUids,
-        deadline: `${deadline}T23:59:59+08:00`,
+        description: brief.trim() || undefined,
+        assignee_ids: assigneeUids,
+        deadline: deadline ? `${deadline}T23:59:59+08:00` : undefined,
         source_channel_id: channel?.channelId,
         source_channel_type: channel?.channelType,
       });

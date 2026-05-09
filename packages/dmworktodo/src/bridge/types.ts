@@ -107,6 +107,7 @@ export interface CreateMatterReq {
   source_channel_type?: number;
   source_name?: string;
   deadline?: string;
+  remind_at?: string;
 }
 
 export interface UpdateMatterReq {
