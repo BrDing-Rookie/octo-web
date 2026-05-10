@@ -191,9 +191,7 @@ export default function SmartCreateModal({
             {/* 标题 */}
             <div className="wk-smart-create-modal__field">
               <label className="wk-smart-create-modal__label">
-                标题{" "}
-                {!blank && <span className="wk-scm__ai-hint">AI 已填</span>}{" "}
-                <span className="wk-smart-create-modal__req">*</span>
+                标题 <span className="wk-smart-create-modal__req">*</span>
               </label>
               <input
                 ref={titleInputRef}
@@ -208,9 +206,7 @@ export default function SmartCreateModal({
             {/* 主要目标 */}
             <div className="wk-smart-create-modal__field">
               <label className="wk-smart-create-modal__label">
-                主要目标{" "}
-                {!blank && <span className="wk-scm__ai-hint">AI 已填</span>}{" "}
-                <span className="wk-smart-create-modal__req">*</span>
+                主要目标 <span className="wk-smart-create-modal__req">*</span>
               </label>
               <textarea
                 className="wk-smart-create-modal__textarea"
@@ -224,9 +220,7 @@ export default function SmartCreateModal({
             {/* 负责人 */}
             <div className="wk-smart-create-modal__field">
               <label className="wk-smart-create-modal__label">
-                负责人{" "}
-                {!blank && <span className="wk-scm__ai-hint">AI 已填</span>}{" "}
-                <span className="wk-smart-create-modal__req">*</span>
+                负责人 <span className="wk-smart-create-modal__req">*</span>
               </label>
               <MemberPicker
                 mode="controlled"
@@ -240,9 +234,7 @@ export default function SmartCreateModal({
             {/* Deadline */}
             <div className="wk-smart-create-modal__field">
               <label className="wk-smart-create-modal__label">
-                Deadline{" "}
-                {!blank && <span className="wk-scm__ai-hint">AI 已填</span>}{" "}
-                <span className="wk-smart-create-modal__req">*</span>
+                Deadline <span className="wk-smart-create-modal__req">*</span>
               </label>
               <DatePicker
                 className="wk-smart-create-modal__datepicker"
