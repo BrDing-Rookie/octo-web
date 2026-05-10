@@ -245,14 +245,31 @@ export default function MatterDetailPanel({
     !!currentUid &&
     (matter.creator_id === currentUid ||
       assignees.some((a) => a.user_id === currentUid));
-  // 候选成员来源：优先 matter 的来源 channel（发起 channel），没有则回落到 Space 成员
-  const ownerCandidateChannel =
-    matter.source_channel_id && matter.source_channel_type !== undefined
-      ? {
-          channelId: matter.source_channel_id,
-          channelType: matter.source_channel_type,
-        }
-      : undefined;
+  // 候选成员来源: Matter 所有关联 channel 成员的并集 (PRD §5.1)。
+  //   - matter.channels 是通过 POST /matters/:id/channels 关联的所有群
+  //   - matter.source_channel 是创建时的发起群, 通常也在 matter.channels 里,
+  //     但为了兼容极端数据 (例如关联后又解绑了发起群) 再做一次 union
+  //   - 按 (channel_id, channel_type) 去重后传给 OwnerEditor
+  const ownerCandidateChannels = (() => {
+    const seen = new Set<string>();
+    const list: { channelId: string; channelType: number }[] = [];
+    const push = (id: string | undefined | null, type: number | undefined | null) => {
+      if (!id || type === undefined || type === null) return;
+      const key = `${id}:${type}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push({ channelId: id, channelType: type });
+    };
+    for (const ch of matter.channels || []) {
+      push(ch.channel_id, ch.channel_type);
+    }
+    push(matter.source_channel_id, matter.source_channel_type);
+    return list;
+  })();
+
+  // 转发权限 (PRD §5.2 要点 [1]): 只给发起人 + 负责人, 关联成员按钮直接隐藏。
+  // 条件跟 canEditOwner 一致, 但语义上是两个独立规则, 分开命名避免耦合。
+  const canForward = canEditOwner;
 
   const formatDeadline = (d: string) => {
     const date = new Date(d);
@@ -315,26 +332,28 @@ export default function MatterDetailPanel({
                 </span>
               </span>
             )}
-            <button
-              type="button"
-              className="wk-mp-header__action"
-              title="转发"
-              onClick={handleLinkChannel}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
+            {canForward && (
+              <button
+                type="button"
+                className="wk-mp-header__action"
+                title="转发"
+                onClick={handleLinkChannel}
               >
-                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                <polyline points="16 6 12 2 8 6" />
-                <line x1="12" y1="2" x2="12" y2="15" />
-              </svg>
-              转发
-            </button>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                  <polyline points="16 6 12 2 8 6" />
+                  <line x1="12" y1="2" x2="12" y2="15" />
+                </svg>
+                转发
+              </button>
+            )}
             <button
               type="button"
               className="wk-mp-header__close"
@@ -397,7 +416,7 @@ export default function MatterDetailPanel({
               <OwnerEditor
                 assignees={assignees}
                 canEdit={canEditOwner}
-                candidateChannel={ownerCandidateChannel}
+                candidateChannels={ownerCandidateChannels}
                 onToggle={handleToggleAssignee}
               />
               <span className="wk-mp-people__role">负责人</span>
