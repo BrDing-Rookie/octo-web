@@ -5,7 +5,7 @@ import { MessageWrap } from '../../Service/Model'
 import { MessageContentTypeConst } from '../../Service/Const'
 import { MessageRowUIProps } from './types'
 import { resolveExternalForViewer } from '../../Utils/externalViewer'
-import { subscriberDisplayName } from '../../Utils/displayName'
+import { subscriberDisplayName, isRealnameVerified } from '../../Utils/displayName'
 import moment from 'moment'
 
 export interface MessageRowSelectionState {
@@ -35,20 +35,29 @@ function getSenderName(channelInfo: ChannelInfo | undefined, fromUID: string): s
 }
 
 /**
- * 群消息场景下优先从群成员列表取名字（群内昵称 remark > 全局 name）。
- * 进群时群成员会批量同步到 SDK 的 subscribeCacheMap，命中率远高于
- * 单查 Person ChannelInfo（单查还可能因权限失败污染缓存）。
+ * 合并后的群成员查找：一次遍历 subscribers 同时返回 member 对象和展示名。
  *
- * 返回空串表示没命中，调用方应继续降级到 channelInfo。
+ * YUJ-387 P1-2: 原先 `getGroupMemberName` 与 `getGroupMember` 会对同一个
+ * subscribers 数组做两次 `.find()`（O(2n)），在大群（1000+ 成员）每条
+ * 消息都会重复扫表。此函数合并成单次查找，调用方按需解构。
+ *
+ * 返回：
+ *   - `member`: 命中的群成员对象（未命中 / 非群消息为 undefined）
+ *   - `memberName`: `subscriberDisplayName(member)` 的结果；未命中返回 ''
+ *
+ * 调用方约定：非群消息 / 缓存未到达 → member=undefined, memberName=''，
+ * 调用方应继续降级到 Person channelInfo。
  */
-function getGroupMemberName(message: MessageWrap): string {
-  if (message.channel?.channelType !== ChannelTypeGroup || !message.fromUID) return ''
+function getGroupMemberInfo(message: MessageWrap): { member: any | undefined; memberName: string } {
+  if (message.channel?.channelType !== ChannelTypeGroup || !message.fromUID) {
+    return { member: undefined, memberName: '' }
+  }
   try {
     const subs = WKSDK.shared().channelManager.getSubscribes(message.channel) as any[] | null | undefined
     const member = subs?.find((s) => s && s.uid === message.fromUID)
-    return subscriberDisplayName(member)
+    return { member, memberName: subscriberDisplayName(member) }
   } catch {
-    return ''
+    return { member: undefined, memberName: '' }
   }
 }
 
@@ -119,6 +128,20 @@ export function getMessageRow(
   const isExternal = hasMsgLevel ? msgRes.isExternal : orgRes.isExternal
   const sourceSpaceName = hasMsgLevel ? msgRes.sourceSpaceName : orgRes.sourceSpaceName
 
+  // YUJ-387 P1-2: 单次群成员查找，同时拿到 memberName 和 member 对象，
+  // 避免重复 .find()。
+  const { member: groupMember, memberName: groupMemberName } = getGroupMemberInfo(message)
+
+  // YUJ-379 / Epic dmwork-web#1169 Phase A: 发送者实名徽章。
+  // 优先群成员 orgData（群消息命中率最高），回落 Person channelInfo.orgData
+  // （1v1 私聊或群成员列表尚未同步）。AI / 字段缺失一律为 false，未实名不
+  // 渲染任何徽章。
+  const isBotSender = channelInfo?.orgData?.robot === 1
+  const realnameVerified =
+    !isBotSender &&
+    (isRealnameVerified(groupMember?.orgData) ||
+      isRealnameVerified(channelInfo?.orgData))
+
   return {
     isSend: message.send,
     isContinue,
@@ -126,7 +149,7 @@ export function getMessageRow(
     showCheckbox: selection?.showCheckbox ?? false,
     showAvatar: !isContinue,
     avatarUrl: WKApp.shared.avatarUser(message.fromUID),
-    senderName: getGroupMemberName(message) || getSenderName(channelInfo, message.fromUID),
+    senderName: groupMemberName || getSenderName(channelInfo, message.fromUID),
     isBot: channelInfo?.orgData?.robot === 1,
     timestamp,
     timeOnly,
@@ -134,6 +157,7 @@ export function getMessageRow(
     isEdit: message.message?.remoteExtra?.isEdit ?? false,
     isExternal,
     sourceSpaceName,
+    isRealnameVerified: realnameVerified,
     onSelect: selection?.onSelect,
     onAvatarClick,
     onSenderNameClick,

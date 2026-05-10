@@ -1,5 +1,10 @@
-/* OCTO 实名认证徽章 — YUJ-359 / GH dmwork-web#1121
- * 仅用于个人资料页（MeInfo / UserInfo 头部），不进入聊天气泡 / 群成员列表。
+/* OCTO 实名认证徽章 — YUJ-359 / YUJ-379 / Epic dmwork-web#1169
+ * 个人资料页用默认 variant="full"（图标 + 「已实名」tag）；
+ * 聊天气泡作者名旁 + 群成员列表每行用 variant="icon"（只蓝色 ✓ 圆点，
+ * 12×12 视觉尺寸、不占行高，紧贴作者名右侧）。
+ *
+ * 尺寸约束（YUJ-387 P2-1）：Icon 统一为 12×12（SVG width/height + viewBox），
+ * 三处（需求 / CSS 注释 / SVG 实际尺寸）对齐，避免后续维护漂移。
  */
 .wk-realname-badge {
     display: inline-flex;
@@ -18,6 +23,9 @@
     flex-shrink: 0;
     display: inline-block;
     vertical-align: middle;
+    /* YUJ-387 P2-1: 强制 12×12，防止 viewBox / 外部样式漂移。 */
+    width: 12px;
+    height: 12px;
 }
 
 .wk-realname-badge__text {

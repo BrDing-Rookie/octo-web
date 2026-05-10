@@ -19,7 +19,7 @@ import {
 import { IConversationProvider } from "../../Service/DataSource/DataProvider";
 import WKApp from "../../App";
 import { resolveExternalForViewer } from "../../Utils/externalViewer";
-import { subscriberDisplayName } from "../../Utils/displayName";
+import { subscriberDisplayName, isRealnameVerified } from "../../Utils/displayName";
 import { css } from "@emotion/react";
 // import ClockLoader from "react-spinners/ClockLoader";
 import Checkbox from "../../Components/Checkbox";
@@ -27,6 +27,7 @@ import classNames from "classnames";
 import { Popconfirm } from "@douyinfe/semi-ui";
 import WKAvatar from "../../Components/WKAvatar";
 import AiBadge from "../../Components/AiBadge";
+import RealnameVerifiedBadge from "../../Components/RealnameVerifiedBadge";
 import { getTitleColor } from "./head";
 import moment from "moment";
 import ThreadIndicator, {
@@ -288,6 +289,9 @@ export default class MessageBase extends Component<MessageBaseProps, any> {
     // 对成员列表未命中的场景（超级群分页外、时序窗口内、私聊）再降级到
     // Person ChannelInfo；都拿不到则留空，避免把 32 位 UID 暴露到 UI。
     let groupMemberName = "";
+    // YUJ-379 / Epic #1169: 实名徽章的判断也优先读群成员 orgData，回退
+    // Person ChannelInfo.orgData（私聊或群成员列表未命中场景）。
+    let groupMember: any = undefined;
     if (message.channel.channelType === ChannelTypeGroup && message.fromUID) {
       try {
         const subs = WKSDK.shared().channelManager.getSubscribes(
@@ -295,6 +299,7 @@ export default class MessageBase extends Component<MessageBaseProps, any> {
         ) as any[] | null | undefined;
         const member = subs?.find((s) => s && s.uid === message.fromUID);
         groupMemberName = subscriberDisplayName(member);
+        groupMember = member;
       } catch {
         // channelManager 未初始化 / 缓存未加载：静默降级
       }
@@ -351,6 +356,14 @@ export default class MessageBase extends Component<MessageBaseProps, any> {
     const extResolved = hasMsgLevelExt ? msgRes : orgRes;
     const showExtOrigin = !isAi && extResolved.isExternal;
     const extSourceSpaceName = extResolved.sourceSpaceName;
+
+    // YUJ-379 / Epic dmwork-web#1169: 聊天气泡作者名旁的实名徽章。
+    // 优先读群成员 orgData（群内命中率最高），回落到 Person channelInfo.orgData
+    // （1v1 私聊 / 群成员列表尚未同步）。系统消息 / AI / 缺字段场景一律不渲染。
+    const showRealnameBadge =
+      !isAi &&
+      (isRealnameVerified(groupMember?.orgData) ||
+        isRealnameVerified(channelInfo?.orgData));
 
     return (
       <div
@@ -432,6 +445,12 @@ export default class MessageBase extends Component<MessageBaseProps, any> {
                   >
                     {displayName}
                   </span>
+                  {/* YUJ-379 / Epic dmwork-web#1169: 实名徽章紧贴作者名右侧，
+                      只 variant="icon" 迷你形态，已实名用户才渲染，未实名
+                      一律不加任何负担标识。解除 YUJ-359 硬约束后的 Phase A。*/}
+                  {showRealnameBadge && (
+                    <RealnameVerifiedBadge variant="icon" />
+                  )}
                   {/* YUJ-66: 外部群成员「@SpaceName」后缀（企微风格）。
                       按当前查看 Space 相对渲染，观察者 home_space 与成员
                       home_space 不同时显示；优先 msg-level，回落 orgData。*/}

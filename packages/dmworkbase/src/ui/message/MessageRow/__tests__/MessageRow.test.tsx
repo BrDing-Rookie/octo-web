@@ -107,3 +107,105 @@ describe("MessageRow — @SpaceName suffix in wk-msg-row-header", () => {
         expect(html).not.toContain("@ExampleCorp")
     })
 })
+
+/**
+ * YUJ-379 / Epic dmwork-web#1169 Phase A — 聊天气泡作者名旁的实名徽章。
+ *
+ * 2026-05-10 Yu 决策解除 YUJ-359「聊天气泡不使用 RealnameVerifiedBadge」硬约束：
+ * 实名比例约 20%，徽章已从「噪音」变成「稀缺的差异化信号」，尤其对外部群混合
+ * 身份场景有价值。
+ *
+ * 硬要求：
+ *   - **只** variant="icon"，未实名一律不渲染（不加灰色 badge / 警告标）。
+ *   - 字段缺失 / false / 0 等都走未实名分支。
+ *   - 徽章位于 wk-msg-row-header 容器内，紧贴作者名右侧。
+ */
+describe("MessageRow — RealnameVerifiedBadge in wk-msg-row-header (YUJ-379 Phase A)", () => {
+    const baseProps = {
+        isSend: false,
+        isContinue: false,
+        isSelected: false,
+        showAvatar: true,
+        avatarUrl: "https://example.test/avatar.png",
+        senderName: "yujiawei",
+        timestamp: "10:30",
+    }
+
+    it("renders the realname ✓ badge when isRealnameVerified=true (verified fixture)", () => {
+        const html = renderToStaticMarkup(
+            <MessageRow
+                {...baseProps}
+                isRealnameVerified={true}
+            >
+                <div className="msg-body">hello</div>
+            </MessageRow>
+        )
+        expect(html).toContain("yujiawei")
+        // 关键断言：icon variant 的 realname badge 必须渲染在 header 里
+        expect(html).toMatch(/wk-realname-badge/)
+        expect(html).toMatch(/wk-realname-badge--icon/)
+        expect(html).toMatch(/已完成实名认证/) // title attr
+        // 必须在 wk-msg-row-header 容器内
+        expect(html).toMatch(/wk-msg-row-header[\s\S]*wk-realname-badge/)
+        // icon variant 下不得出现「已实名」文字（只一个 ✓ 圆点）
+        expect(html).not.toContain("已实名</span>")
+    })
+
+    it("does NOT render the realname badge when isRealnameVerified is false / undefined / missing (unverified + field-missing degradation)", () => {
+        // 未实名：显式 false
+        const htmlFalse = renderToStaticMarkup(
+            <MessageRow {...baseProps} isRealnameVerified={false}>
+                <div className="msg-body">hi</div>
+            </MessageRow>
+        )
+        expect(htmlFalse).toContain("yujiawei")
+        expect(htmlFalse).not.toMatch(/wk-realname-badge/)
+
+        // 字段缺失：prop 根本没传（模拟 orgData 字段缺失场景）
+        const htmlMissing = renderToStaticMarkup(
+            <MessageRow {...baseProps}>
+                <div className="msg-body">hi</div>
+            </MessageRow>
+        )
+        expect(htmlMissing).toContain("yujiawei")
+        expect(htmlMissing).not.toMatch(/wk-realname-badge/)
+    })
+
+    it("does NOT render the realname badge when isContinue=true (连续消息无 header)", () => {
+        const html = renderToStaticMarkup(
+            <MessageRow
+                {...baseProps}
+                isContinue={true}
+                showAvatar={false}
+                isRealnameVerified={true}
+            >
+                <div className="msg-body">continued</div>
+            </MessageRow>
+        )
+        // 连续消息压根没 wk-msg-row-header 容器，徽章也不渲染
+        expect(html).not.toMatch(/wk-msg-row-header/)
+        expect(html).not.toMatch(/wk-realname-badge/)
+    })
+
+    it("renders both @SpaceName suffix AND realname ✓ badge together (cross-space + verified)", () => {
+        // 外部实名用户：两个徽章并存（@SpaceName + ✓）。实名徽章紧贴作者名
+        // 右侧（Yu 约束：「紧贴作者名右侧」），@SpaceName 再在 badge 后。
+        const html = renderToStaticMarkup(
+            <MessageRow
+                {...baseProps}
+                isExternal={true}
+                sourceSpaceName="ExampleCorp"
+                isRealnameVerified={true}
+            >
+                <div className="msg-body">hello</div>
+            </MessageRow>
+        )
+        expect(html).toMatch(/wk-msg-row-sender-space/)
+        expect(html).toMatch(/wk-realname-badge--icon/)
+        expect(html).toContain("@ExampleCorp")
+        // 两者都在 header 内；实名 ✓ 紧贴作者名（先 sender 再 badge 再 @Space）
+        expect(html).toMatch(
+            /wk-msg-row-header[\s\S]*wk-msg-row-sender[\s\S]*wk-realname-badge[\s\S]*wk-msg-row-sender-space/
+        )
+    })
+})

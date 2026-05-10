@@ -10,7 +10,9 @@ import WKBase, { WKBaseContext } from "../WKBase";
 import RouteContext, { RouteContextConfig } from "../../Service/Context";
 import { SubscriberList } from "./list";
 import { resolveExternalForViewer } from "../../Utils/externalViewer";
+import { isRealnameVerified } from "../../Utils/displayName";
 import { GroupRole } from "../../Service/Const";
+import RealnameVerifiedBadge from "../RealnameVerifiedBadge";
 
 export interface SubscribersProps {
   context: RouteContext<any>;
@@ -55,6 +57,11 @@ export class Subscribers extends Component<SubscribersProps> {
         </div>
         <div className="wk-subscribers-item-name">
           {subscriber.remark || subscriber.name}
+          {/* YUJ-379 / Epic dmwork-web#1169 Phase A: 群成员列表实名徽章
+              （icon variant），已实名才显示。解除 YUJ-359 硬约束。*/}
+          {isRealnameVerified(subscriber.orgData) && (
+            <RealnameVerifiedBadge variant="icon" />
+          )}
         </div>
         {isExternal && sourceSpaceName && (
           <span

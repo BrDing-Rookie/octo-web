@@ -14,7 +14,9 @@ import { Tag } from "@douyinfe/semi-ui";
 import { GroupRole } from "../../Service/Const";
 import { debounce, throttle } from "../../Utils/rateLimit";
 import { resolveExternalForViewer } from "../../Utils/externalViewer";
+import { isRealnameVerified } from "../../Utils/displayName";
 import { OnlineStatusBadge } from "../ConversationList";
+import RealnameVerifiedBadge from "../RealnameVerifiedBadge";
 
 export interface SubscriberListProps {
   channel: Channel;
@@ -309,6 +311,13 @@ export class SubscriberList extends Component<
                       <div className="wk-subscrierlist-item-content">
                         <div className="wk-subscrierlist-item-name">
                           {this.getShowName(item)}
+                          {/* YUJ-379 / Epic dmwork-web#1169 Phase A: 实名徽章
+                              （icon variant）紧贴姓名右侧，已实名才渲染。
+                              解除 YUJ-359 硬约束。Bot 走同样规则（isRealnameVerified
+                              对非实名 bot 返回 false，不会出现 Bot + 实名 同时显示）。*/}
+                          {isRealnameVerified(item.orgData) && (
+                            <RealnameVerifiedBadge variant="icon" />
+                          )}
                           {/* YUJ-66: 「@SpaceName」后缀（企微风格），按当前查看 Space 相对渲染。
                               观察者 home_space 与成员 home_space 不同时显示；自己看自己不显示。
                               Bot 成员走同一规则（resolveExternalForViewer 对 bot 与人类对称）。*/}

@@ -71,6 +71,15 @@ export interface MessageRowUIProps {
    */
   sourceSpaceName?: string
 
+  /**
+   * 发送者是否已完成 OCTO 实名认证（YUJ-379 / Epic dmwork-web#1169 Phase A）。
+   * 为 true 时在发送者名右侧紧贴渲染 `<RealnameVerifiedBadge variant="icon" />`
+   * 迷你蓝色 ✓ 圆点。Bridge 层优先从群成员 orgData 读取 `realname_verified`，
+   * 回落到 Person channelInfo.orgData。未实名 / AI / 字段缺失：一律不渲染
+   * （不加灰色 badge / 警告标，以免给未实名用户施压）。
+   */
+  isRealnameVerified?: boolean
+
   /** 消息内容（子组件） */
   children: React.ReactNode
 }

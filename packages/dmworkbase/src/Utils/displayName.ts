@@ -15,15 +15,21 @@
  *     并同步计算 `orgData.displayName` 供消费方直接读取
  *
  * 备注：
- *   - 实名认证是默认属性，UI 层面**不**在每个展示点加「✓ 已实名」勾图标
- *     （只在个人资料页展示一次，见 GH #1121 「不在范围」章节）
+ *   - 实名认证状态除了作为名称优先级信号外，现在还会在**聊天气泡作者名旁 +
+ *     群成员列表每行 + 个人资料页**展示迷你 ✓ 图标（`<RealnameVerifiedBadge
+ *     variant="icon" />`）。2026-05-10 YUJ-379 / Epic dmwork-web#1169 解除了
+ *     YUJ-359 / GH #1121 原先「UI 层面不在每个展示点加 ✓ 勾」的硬约束：实名
+ *     比例只有约 20%，在外部群混合身份场景下它是差异化信号而非噪音。
+ *   - 当前仍不展示徽章的位置（Phase B）：@mention 联想下拉 / 联系人列表 /
+ *     已读列表 / 会话列表（见 Epic dmwork-web#1169 "不在范围"）。
  *   - 任何新的名称展示点（聊天气泡 / 群成员 / @mention / 已读列表 ...）
- *     都应当消费 `orgData.displayName` 或本工具，而非直接读 `user.name`
+ *     都应当消费 `orgData.displayName` 或本工具，而非直接读 `user.name`，
+ *     并使用 `isRealnameVerified()` 判断是否渲染徽章。
  */
 export interface DisplayNameUser {
     name?: string | null;
     real_name?: string | null;
-    realname_verified?: boolean | number | null;
+    realname_verified?: boolean | number | string | null;
     remark?: string | null;
 }
 
@@ -31,11 +37,26 @@ function nonEmpty(v: string | null | undefined): v is string {
     return typeof v === "string" && v.length > 0;
 }
 
+/**
+ * 归一化 realname_verified 到严格 boolean。
+ *
+ * YUJ-387 E1: 后端序列化偏差（不同节点 / 老接口）可能把 tinyint(1) 投射成
+ * 字符串 `"1"` 或 `"true"`；如果只比较 `=== true` / `=== 1`，这些场景会
+ * 被误判为「未实名」，导致徽章不渲染 / real_name 降级。这里把所有形如
+ * truthy 的实名值统一收敛到 true。
+ *
+ * 接受：true, 1, "1", "true"（大小写敏感，后端约定只会给小写；如果
+ * 后续发现 "True" 等变体再加 toLowerCase，保持当前实现贴合实际载荷）。
+ */
+function normalizeVerified(v: boolean | number | string | null | undefined): boolean {
+    return v === true || v === 1 || v === "1" || v === "true";
+}
+
 export function displayName(user: DisplayNameUser | null | undefined): string {
     if (!user) return "";
     if (nonEmpty(user.remark)) return user.remark;
-    // realname_verified 兼容 bool / 1 / 0
-    const verified = user.realname_verified === true || user.realname_verified === 1;
+    // YUJ-387 E1: realname_verified 兼容 bool / 1 / 0 / "1" / "true"
+    const verified = normalizeVerified(user.realname_verified);
     if (verified && nonEmpty(user.real_name)) return user.real_name;
     return nonEmpty(user.name) ? user.name : "";
 }
@@ -43,10 +64,13 @@ export function displayName(user: DisplayNameUser | null | undefined): string {
 /**
  * 判断某个 profile 是否已完成实名认证。
  * orgData 场景通常用 realname_verified === 1；以后端决定值的真假逻辑为准。
+ *
+ * YUJ-387 E1: 兼容字符串 `"1"` / `"true"`（后端不同节点序列化偏差），避免
+ * 因类型不一致导致徽章不渲染。
  */
 export function isRealnameVerified(user: DisplayNameUser | null | undefined): boolean {
     if (!user) return false;
-    return user.realname_verified === true || user.realname_verified === 1;
+    return normalizeVerified(user.realname_verified);
 }
 
 /**
@@ -62,7 +86,7 @@ export function isRealnameVerified(user: DisplayNameUser | null | undefined): bo
 export interface SubscriberLike {
     name?: string | null;
     remark?: string | null;
-    orgData?: { real_name?: string | null; realname_verified?: boolean | number | null } | null;
+    orgData?: { real_name?: string | null; realname_verified?: boolean | number | string | null } | null;
 }
 
 export function subscriberDisplayName(sub: SubscriberLike | null | undefined): string {

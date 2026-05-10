@@ -3,6 +3,7 @@ import classNames from 'classnames'
 import Avatar from '../Avatar'
 import Timestamp from '../Timestamp'
 import AiBadge from '../../../Components/AiBadge'
+import RealnameVerifiedBadge from '../../../Components/RealnameVerifiedBadge'
 import './index.css'
 
 export interface MessageRowProps {
@@ -46,6 +47,13 @@ export interface MessageRowProps {
    * 外部来源 Space 名称（相对当前查看 Space 解析后）（YUJ-98 R7）。
    */
   sourceSpaceName?: string
+
+  /**
+   * 发送者是否已完成 OCTO 实名认证（YUJ-379 / Epic dmwork-web#1169 Phase A）。
+   * 为 true 时在发送者名右侧紧贴渲染 `<RealnameVerifiedBadge variant="icon" />`
+   * 迷你蓝色 ✓ 圆点。未实名一律不渲染（不加灰色 badge / 警告标）。
+   */
+  isRealnameVerified?: boolean
   
   /** 选择状态变化回调 */
   onSelect?: (selected: boolean) => void
@@ -100,6 +108,7 @@ export default function MessageRow({
   isEdit,
   isExternal,
   sourceSpaceName,
+  isRealnameVerified,
   onSelect,
   children,
   showCheckbox = false,
@@ -175,6 +184,11 @@ export default function MessageRow({
               style={{ cursor: onSenderNameClick ? 'pointer' : undefined }}
               onClick={onSenderNameClick}
             >{senderName}</span>
+            {/* YUJ-379 / Epic dmwork-web#1169 Phase A: 实名徽章紧贴作者名右侧，
+                只 variant="icon" 迷你形态，已实名才渲染；解除 YUJ-359 硬约束。*/}
+            {isRealnameVerified && (
+              <RealnameVerifiedBadge variant="icon" />
+            )}
             {/*
               YUJ-98 R7: 发送者名后的 @SpaceName 后缀（企微风格）。
               R1-R6 五轮都改了新组件 wk-msg-head，但真正上屏的是这个老组件
