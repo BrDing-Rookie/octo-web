@@ -1,9 +1,5 @@
 import React from "react";
-import { Channel, ChannelTypePerson } from "wukongimjssdk";
-import WKAvatar from "@octo/base/src/Components/WKAvatar";
 import type { Matter } from "../../bridge/types";
-import UserName from "../UserName";
-import { useChannelName } from "../../hooks/useChannelName";
 import "./index.css";
 
 const STATUS_MAP: Record<string, { label: string; className: string }> = {
@@ -21,24 +17,29 @@ function formatDdl(deadline?: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+export interface SidebarCardProps {
+  matter: Matter;
+  selected: boolean;
+  onClick: () => void;
+  /** Render an avatar for the given uid at the given pixel size */
+  renderAvatar: (uid: string, size: number) => React.ReactNode;
+  /** Render a user name inline for the given uid */
+  renderUserName: (uid: string) => React.ReactNode;
+  /** Pre-resolved source channel name (replaces internal useChannelName call) */
+  sourceChannelName?: string;
+}
+
 export default function SidebarCard({
   matter,
   selected,
   onClick,
-}: {
-  matter: Matter;
-  selected: boolean;
-  onClick: () => void;
-}) {
+  renderAvatar,
+  renderUserName,
+  sourceChannelName,
+}: SidebarCardProps) {
   const status = STATUS_MAP[matter.status] || STATUS_MAP.open;
   const ddl = formatDdl(matter.deadline);
-  // source_name 是创建时快照, 用 (source_channel_id, source_channel_type) 反查最新群名。
-  // 反查未命中时回退到 source_name, 都没有就隐藏整块 "·#xxx" (条件已收紧到 source_channel_id)。
-  const liveSourceName = useChannelName(
-    matter.source_channel_id,
-    matter.source_channel_type,
-  );
-  const displaySourceName = liveSourceName || matter.source_name;
+  const displaySourceName = sourceChannelName || matter.source_name;
 
   return (
     <button
@@ -59,11 +60,8 @@ export default function SidebarCard({
       <div className="wk-mp-sidebar-card__title">{matter.title}</div>
       <div className="wk-mp-sidebar-card__meta">
         <span className="wk-mp-sidebar-card__creator">
-          <WKAvatar
-            channel={new Channel(matter.creator_id, ChannelTypePerson)}
-            style={{ width: 14, height: 14 }}
-          />
-          <UserName uid={matter.creator_id} />
+          {renderAvatar(matter.creator_id, 14)}
+          {renderUserName(matter.creator_id)}
         </span>
         <span className="wk-mp-sidebar-card__meta-label">创建</span>
         {matter.source_channel_id && displaySourceName && (
@@ -83,10 +81,7 @@ export default function SidebarCard({
                 key={a.user_id}
                 style={{ marginLeft: i > 0 ? -5 : 0, zIndex: 3 - i }}
               >
-                <WKAvatar
-                  channel={new Channel(a.user_id, ChannelTypePerson)}
-                  style={{ width: 14, height: 14, border: "1.5px solid white" }}
-                />
+                {renderAvatar(a.user_id, 14)}
               </span>
             ))}
           </span>
@@ -94,7 +89,7 @@ export default function SidebarCard({
             {matter.assignees.slice(0, 3).map((a, i) => (
               <React.Fragment key={a.user_id}>
                 {i > 0 && "、"}
-                <UserName uid={a.user_id} />
+                {renderUserName(a.user_id)}
               </React.Fragment>
             ))}
             {matter.assignees.length > 3 && (

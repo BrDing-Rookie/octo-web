@@ -1,8 +1,27 @@
 import React from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import OwnerEditor from './index'
-import type { OwnerEditorProps } from './index'
 import type { MatterAssignee } from '../../bridge/types'
+
+const mockRenderAvatar = (uid: string, size: number) => (
+  <span
+    style={{
+      display: 'inline-block',
+      width: size,
+      height: size,
+      borderRadius: '50%',
+      background: '#ccc',
+      fontSize: size * 0.5,
+      lineHeight: `${size}px`,
+      textAlign: 'center',
+      color: '#666',
+    }}
+  >
+    {uid.slice(0, 2)}
+  </span>
+)
+
+const mockResolveUserName = (uid: string) => uid.slice(0, 8)
 
 const meta: Meta<typeof OwnerEditor> = {
   title: 'Matter/OwnerEditor',
@@ -25,8 +44,10 @@ const mockAssignees: MatterAssignee[] = [
   { id: 'a2', matter_id: 'm1', user_id: 'd3888a398148451aabc0962f1c5ab7c7', created_at: '' },
 ]
 
-const mockChannels = [
-  { channelId: '111bcaea9ad145ca9b8fafdad50b2196', channelType: 2 },
+const mockCandidates = [
+  { uid: '43e10cf1cd1e490584110a906ede665f', name: 'Alice' },
+  { uid: 'd3888a398148451aabc0962f1c5ab7c7', name: 'Bob' },
+  { uid: 'e4999b409259562aabc1073g2d6bc8d8', name: 'Charlie' },
 ]
 
 /**
@@ -38,10 +59,12 @@ export const EditableAsCreator: Story = {
     canEdit: true,
     currentUid: '43e10cf1cd1e490584110a906ede665f',
     isCreator: true,
-    candidateChannels: mockChannels,
+    candidates: mockCandidates,
     onToggle: async (uid, isAssigned) => {
       console.log(`Toggle ${uid}, currently assigned: ${isAssigned}`)
     },
+    renderAvatar: mockRenderAvatar,
+    resolveUserName: mockResolveUserName,
   },
 }
 
@@ -54,10 +77,12 @@ export const EditableAsAssignee: Story = {
     canEdit: true,
     currentUid: 'd3888a398148451aabc0962f1c5ab7c7',
     isCreator: false,
-    candidateChannels: mockChannels,
+    candidates: mockCandidates,
     onToggle: async (uid, isAssigned) => {
       console.log(`Toggle ${uid}, currently assigned: ${isAssigned}`)
     },
+    renderAvatar: mockRenderAvatar,
+    resolveUserName: mockResolveUserName,
   },
 }
 
@@ -70,8 +95,10 @@ export const ReadOnly: Story = {
     canEdit: false,
     currentUid: 'some-other-uid',
     isCreator: false,
-    candidateChannels: mockChannels,
+    candidates: mockCandidates,
     onToggle: async () => {},
+    renderAvatar: mockRenderAvatar,
+    resolveUserName: mockResolveUserName,
   },
 }
 
@@ -84,23 +111,27 @@ export const SingleAssignee: Story = {
     canEdit: true,
     currentUid: '43e10cf1cd1e490584110a906ede665f',
     isCreator: true,
-    candidateChannels: mockChannels,
+    candidates: mockCandidates,
     onToggle: async (uid, isAssigned) => {
       console.log(`Toggle ${uid}, currently assigned: ${isAssigned}`)
     },
+    renderAvatar: mockRenderAvatar,
+    resolveUserName: mockResolveUserName,
   },
 }
 
 /**
- * 无候选 channel — 下拉只显示当前负责人
+ * 无候选成员 — 下拉只显示当前负责人
  */
-export const NoCandidateChannels: Story = {
+export const NoCandidates: Story = {
   args: {
     assignees: mockAssignees,
     canEdit: true,
     currentUid: '43e10cf1cd1e490584110a906ede665f',
     isCreator: true,
-    candidateChannels: [],
+    candidates: [],
     onToggle: async () => {},
+    renderAvatar: mockRenderAvatar,
+    resolveUserName: mockResolveUserName,
   },
 }

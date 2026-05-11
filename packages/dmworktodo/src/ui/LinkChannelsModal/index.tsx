@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Modal } from "@douyinfe/semi-ui";
-import type { MatterChannel, LinkChannelReq } from "../../bridge/types";
-import { linkChannel } from "../../api/todoApi";
+import type { MatterChannel } from "../../bridge/types";
 import { Toast } from "../../utils/toast";
 import "./LinkChannelsModal.css";
 
@@ -21,10 +20,10 @@ export interface LinkChannelsModalProps {
   linkedChannels: MatterChannel[];
   onClose: () => void;
   onLinked: () => void;
-  /** 外部注入的群列表加载函数（UI/数据分离）。未传时使用内置 WKApp 加载。 */
-  loadChannels?: () => Promise<ChannelOption[]>;
-  /** 外部注入的关联提交函数。未传时使用内置 linkChannel API。 */
-  onLinkChannel?: (matterId: string, channelId: string, channelType: number, channelName: string) => Promise<void>;
+  /** 外部注入的群列表加载函数（UI/数据分离）。 */
+  loadChannels: () => Promise<ChannelOption[]>;
+  /** 外部注入的关联提交函数。 */
+  onLinkChannel: (matterId: string, channelId: string, channelType: number, channelName: string) => Promise<void>;
 }
 
 export default function LinkChannelsModal({
@@ -51,22 +50,7 @@ export default function LinkChannelsModal({
       return;
     }
     setLoading(true);
-    const doLoad = loadChannels
-      ? loadChannels()
-      : import("@octo/base").then(({ WKApp }) =>
-          WKApp.dataSource.channelDataSource
-            .groupSaveList()
-            .then((groups: any[]) =>
-              groups.map((g: any) => ({
-                channelId: g.channel?.channelID || g.channel_id || "",
-                channelType: g.channel?.channelType || 2,
-                name: g.title || g.name || "",
-                desc: g.remark || g.desc || "",
-                memberCount: g.memberCount || g.member_count || undefined,
-              })),
-            ),
-        );
-    doLoad
+    loadChannels()
       .then((opts) => setChannels(opts))
       .catch(() => setChannels([]))
       .finally(() => setLoading(false));
@@ -99,15 +83,7 @@ export default function LinkChannelsModal({
       for (const chId of selected) {
         const ch = channels.find((c) => c.channelId === chId);
         if (!ch) continue;
-        if (onLinkChannel) {
-          await onLinkChannel(matterId, ch.channelId, ch.channelType, ch.name);
-        } else {
-          await linkChannel(matterId, {
-            channel_id: ch.channelId,
-            channel_type: ch.channelType,
-            channel_name: ch.name,
-          });
-        }
+        await onLinkChannel(matterId, ch.channelId, ch.channelType, ch.name);
       }
       Toast.success(`已关联 ${selected.length} 个群聊`);
       onLinked();

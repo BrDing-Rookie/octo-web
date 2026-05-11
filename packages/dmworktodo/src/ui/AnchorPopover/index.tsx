@@ -1,12 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Channel, ChannelTypePerson } from 'wukongimjssdk';
-import WKAvatar from '@octo/base/src/Components/WKAvatar';
-import UserName from '../UserName';
-import { useChannelName } from '../../hooks/useChannelName';
 import type { IMMessageResp } from '../../api/imMessageApi';
-import { getMessageByChannel as defaultGetMessage } from '../../api/imMessageApi';
-import { WKApp } from '@octo/base';
-import { ShowConversationOptions } from '@octo/base/src/EndpointCommon';
 import './index.css';
 
 /**
@@ -46,8 +39,14 @@ export interface AnchorPopoverProps {
     x?: number;
     y?: number;
     onClose: () => void;
-    /** 外部注入的消息获取函数（UI/数据分离）。未传时使用内置 getMessageByChannel。 */
-    fetchMessage?: (params: { channelId: string; channelType: number; messageId: string }) => Promise<IMMessageResp>;
+    /** 外部注入的消息获取函数（UI/数据分离）。 */
+    fetchMessage: (params: { channelId: string; channelType: number; messageId: string }) => Promise<IMMessageResp>;
+    /** Render an avatar for the given uid at the given pixel size */
+    renderAvatar: (uid: string, size: number) => React.ReactNode;
+    /** Render a user name inline for the given uid */
+    renderUserName: (uid: string) => React.ReactNode;
+    /** 可选: 跳转到原消息回调。传入第一条成功加载消息的 message_seq。 */
+    onJumpToMessage?: (messageSeq: number) => void;
 }
 
 interface LoadedMessage {
@@ -71,16 +70,16 @@ export default function AnchorPopover({
     y,
     onClose,
     fetchMessage,
+    renderAvatar,
+    renderUserName,
+    onJumpToMessage,
 }: AnchorPopoverProps) {
     const [results, setResults] = useState<FetchResult[]>([]);
     const [loading, setLoading] = useState(true);
     const bodyRef = useRef<HTMLDivElement>(null);
 
-    // 优先用 WKSDK 反查的最新群名, 未命中时用调用方传的 channelName 兜底,
-    // 最后兜底到 channel id 前缀。跟 MatterDetailPanel 里 liveSourceName 同逻辑。
-    const liveChannelName = useChannelName(channelId, channelType);
     const displayChannelName =
-        liveChannelName || channelName || channelId.slice(0, 8);
+        channelName || channelId.slice(0, 8);
 
     // ESC 关闭
     useEffect(() => {
@@ -102,12 +101,11 @@ export default function AnchorPopover({
             return;
         }
         setLoading(true);
-        const getMessage = fetchMessage || defaultGetMessage;
         Promise.all(
             messageIds.map(
                 async (mid): Promise<FetchResult> => {
                     try {
-                        const data = await getMessage({
+                        const data = await fetchMessage({
                             channelId,
                             channelType,
                             messageId: mid,
@@ -139,7 +137,7 @@ export default function AnchorPopover({
             aborted = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [channelId, channelType, ids]);
+    }, [channelId, channelType, ids, fetchMessage]);
 
     const onMaskClick = useCallback(() => {
         onClose();
@@ -149,19 +147,18 @@ export default function AnchorPopover({
 
     // 跳转到原消息：使用第一条成功加载的消息的 message_seq 定位
     const handleJumpToMessage = useCallback(() => {
+        if (!onJumpToMessage) return;
+
         // 找到第一条成功加载的消息
         const firstSuccess = results.find((r) => r.ok);
         if (!firstSuccess || !firstSuccess.ok) return;
 
         const messageSeq = firstSuccess.data.message_seq;
-        const channel = new Channel(channelId, channelType);
-        const opts = new ShowConversationOptions();
-        opts.initLocateMessageSeq = messageSeq;
 
-        // 关闭弹框并跳转
+        // 关闭弹框并调用外部跳转逻辑
         onClose();
-        WKApp.endpoints.showConversation(channel, opts);
-    }, [results, channelId, channelType, onClose]);
+        onJumpToMessage(messageSeq);
+    }, [results, onClose, onJumpToMessage]);
 
     // 有 x/y 时锚定到指定 viewport 坐标 (按钮下方), 无则走 CSS 居中
     const anchored = typeof x === 'number' && typeof y === 'number';
@@ -169,8 +166,8 @@ export default function AnchorPopover({
         ? { top: y, left: x, right: 'auto', bottom: 'auto', transform: 'none' }
         : undefined;
 
-    // 是否有成功加载的消息（用于判断是否显示跳转按钮）
-    const hasValidMessage = !loading && results.some((r) => r.ok);
+    // 是否有成功加载的消息且支持跳转（用于判断是否显示跳转按钮）
+    const hasValidMessage = !loading && results.some((r) => r.ok) && onJumpToMessage;
 
     return (
         <>
@@ -209,11 +206,16 @@ export default function AnchorPopover({
                     )}
                     {!loading &&
                         results.map((r) => (
-                            <MessageRow key={r.id} result={r} />
+                            <MessageRow
+                                key={r.id}
+                                result={r}
+                                renderAvatar={renderAvatar}
+                                renderUserName={renderUserName}
+                            />
                         ))}
                 </div>
 
-                {/* 跳转到原消息链接：仅在有有效消息时显示 */}
+                {/* 跳转到原消息链接：仅在有有效消息且提供了跳转回调时显示 */}
                 {hasValidMessage && (
                     <div className="wk-anchor-pop__footer">
                         <button
@@ -232,7 +234,15 @@ export default function AnchorPopover({
 
 // ─── 单条消息行 ──────────────────────────────────────
 
-function MessageRow({ result }: { result: FetchResult }) {
+function MessageRow({
+    result,
+    renderAvatar,
+    renderUserName,
+}: {
+    result: FetchResult;
+    renderAvatar: (uid: string, size: number) => React.ReactNode;
+    renderUserName: (uid: string) => React.ReactNode;
+}) {
     if (!result.ok) {
         return (
             <div className="wk-anchor-pop__msg wk-anchor-pop__msg--missing">
@@ -254,16 +264,11 @@ function MessageRow({ result }: { result: FetchResult }) {
                 {formatTime(msg.timestamp)}
             </span>
             <span className="wk-anchor-pop__msg-avatar">
-                <WKAvatar
-                    channel={
-                        new Channel(msg.from_uid, ChannelTypePerson)
-                    }
-                    style={{ width: 18, height: 18 }}
-                />
+                {renderAvatar(msg.from_uid, 18)}
             </span>
             <div className="wk-anchor-pop__msg-content">
                 <div className="wk-anchor-pop__msg-name">
-                    <UserName uid={msg.from_uid} />
+                    {renderUserName(msg.from_uid)}
                 </div>
                 <div className="wk-anchor-pop__msg-text">
                     {extractDisplayText(msg)}

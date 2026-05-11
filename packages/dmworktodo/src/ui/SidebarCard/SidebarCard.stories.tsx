@@ -3,6 +3,28 @@ import type { Meta, StoryObj } from '@storybook/react'
 import SidebarCard from './index'
 import type { Matter } from '../../bridge/types'
 
+const mockRenderAvatar = (uid: string, size: number) => (
+  <span
+    style={{
+      display: 'inline-block',
+      width: size,
+      height: size,
+      borderRadius: '50%',
+      background: '#ccc',
+      fontSize: size * 0.5,
+      lineHeight: `${size}px`,
+      textAlign: 'center',
+      color: '#666',
+    }}
+  >
+    {uid.slice(0, 2)}
+  </span>
+)
+
+const mockRenderUserName = (uid: string) => (
+  <span>{uid.slice(0, 8)}</span>
+)
+
 const meta: Meta<typeof SidebarCard> = {
   title: 'Matter/SidebarCard',
   component: SidebarCard,
@@ -47,6 +69,9 @@ export const Default: Story = {
     matter: baseMatter,
     selected: false,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
+    sourceChannelName: '产品负责人群',
   },
 }
 
@@ -58,6 +83,9 @@ export const Selected: Story = {
     matter: baseMatter,
     selected: true,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
+    sourceChannelName: '产品负责人群',
   },
 }
 
@@ -69,6 +97,8 @@ export const Done: Story = {
     matter: { ...baseMatter, status: 'done' },
     selected: false,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -80,6 +110,8 @@ export const Archived: Story = {
     matter: { ...baseMatter, status: 'archived' },
     selected: false,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -91,6 +123,8 @@ export const NoDeadline: Story = {
     matter: { ...baseMatter, deadline: undefined },
     selected: false,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -105,6 +139,8 @@ export const LongTitle: Story = {
     },
     selected: false,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -125,6 +161,8 @@ export const ManyAssignees: Story = {
     },
     selected: false,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -136,5 +174,7 @@ export const NoAssignees: Story = {
     matter: { ...baseMatter, assignees: [] },
     selected: false,
     onClick: () => {},
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }

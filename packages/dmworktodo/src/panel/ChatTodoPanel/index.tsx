@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { WKApp } from "@octo/base";
+import WKAvatar from "@octo/base/src/Components/WKAvatar";
+import { Channel, ChannelTypePerson } from "wukongimjssdk";
 import { useMatterList } from "../../hooks/useTodoList";
 import MatterDetailPanel from "../MatterDetailPanel";
 import SidebarCard from "../../ui/SidebarCard";
+import UserName from "../../ui/UserName";
 import {
   THREAD_DEFAULT_WIDTH,
   clampThreadWidth,
@@ -28,6 +31,21 @@ export default function ChatMatterPanel({
 }: ChatMatterPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [selectedMatterId, setSelectedMatterId] = useState<string | null>(null);
+
+  // ── UI/数据分离: 为 ui/ 组件提供 renderAvatar / renderUserName ──
+  const renderAvatar = useCallback(
+    (uid: string, size: number) => (
+      <WKAvatar
+        channel={new Channel(uid, ChannelTypePerson)}
+        style={{ width: size, height: size }}
+      />
+    ),
+    [],
+  );
+  const renderUserName = useCallback(
+    (uid: string) => <UserName uid={uid} />,
+    [],
+  );
 
   const [isDragging, setIsDragging] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -228,6 +246,9 @@ export default function ChatMatterPanel({
               matter={matter}
               selected={false}
               onClick={() => setSelectedMatterId(matter.id)}
+              renderAvatar={renderAvatar}
+              renderUserName={renderUserName}
+              sourceChannelName={matter.source_name}
             />
           ))}
         {!loading && displayMatters.length > 0 && (

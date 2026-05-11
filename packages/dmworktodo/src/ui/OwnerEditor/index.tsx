@@ -1,12 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import WKAvatar from '@octo/base/src/Components/WKAvatar';
-import { Channel, ChannelTypePerson } from 'wukongimjssdk';
 import type { MatterAssignee } from '../../bridge/types';
-import {
-    useMembersFromChannels,
-    ChannelRef,
-} from '../../hooks/useMembersFromChannels';
-import { useUserName } from '../../hooks/useUserName';
 import './index.css';
 
 /**
@@ -22,7 +15,7 @@ import './index.css';
  *
  * 交互:
  *   - 点头像行 → 弹下拉
- *   - 候选列表来自 Matter 所有关联 channel 的成员并集 (useMembersFromChannels)
+ *   - 候选列表来自 Matter 所有关联 channel 的成员并集 (由调用方预解析传入)
  *   - 点候选项 → toggle 添加 / 移除
  */
 
@@ -35,13 +28,16 @@ export interface OwnerEditorProps {
     /** 当前用户是否是 Matter 发起人 (creator 能移除任何人, 非 creator 只能移除自己) */
     isCreator: boolean;
     /**
-     * 候选成员来源 channel 列表。一般传 Matter 关联的所有 channel
-     * (matter.channels + source_channel, 去重后)。
+     * 候选成员列表（由调用方预解析）。一般是 Matter 关联的所有 channel 成员的并集。
      * 空数组时下拉只显示当前 assignees (保证可以移除)。
      */
-    candidateChannels: ChannelRef[];
+    candidates: Array<{ uid: string; name?: string }>;
     /** 切换负责人回调 */
     onToggle: (uid: string, isCurrentlyAssigned: boolean) => Promise<void>;
+    /** Render an avatar for the given uid at the given pixel size */
+    renderAvatar: (uid: string, size: number) => React.ReactNode;
+    /** Resolve a user name for display. Falls back to uid if not provided or returns empty. */
+    resolveUserName?: (uid: string) => string;
 }
 
 // ─── 下拉项 ───────────────────────────────────────────
@@ -52,12 +48,14 @@ function OwnerOption({
   picked,
   onClick,
   disabled,
+  renderAvatar,
 }: {
   uid: string;
   name: string;
   picked: boolean;
   onClick: () => void;
   disabled?: boolean;
+  renderAvatar: (uid: string, size: number) => React.ReactNode;
 }) {
   return (
     <button
@@ -67,34 +65,11 @@ function OwnerOption({
       disabled={disabled}
       title={disabled ? '至少保留 1 位负责人' : undefined}
     >
-      <WKAvatar
-        channel={new Channel(uid, ChannelTypePerson)}
-        style={{ width: 16, height: 16 }}
-      />
+      {renderAvatar(uid, 16)}
       <span className="wk-owner-editor__option-name">{name}</span>
       {picked && <span className="wk-owner-editor__option-check">✓</span>}
     </button>
   );
-}
-
-// Option 里 name 要走 useUserName hook，但 hook 不能在循环里直接调；
-// 拆子组件包 hook，才能为每个候选独立订阅 UserName。
-function OwnerOptionConnected({
-  uid,
-  picked,
-  onClick,
-  disabled,
-  fallbackName,
-}: {
-  uid: string;
-  picked: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-  fallbackName?: string;
-}) {
-  const resolved = useUserName(uid);
-  const name = resolved || fallbackName || uid;
-  return <OwnerOption uid={uid} name={name} picked={picked} onClick={onClick} disabled={disabled} />;
 }
 
 // ─── 主组件 ───────────────────────────────────────────
@@ -104,8 +79,10 @@ export default function OwnerEditor({
     canEdit,
     currentUid,
     isCreator,
-    candidateChannels,
+    candidates,
     onToggle,
+    renderAvatar,
+    resolveUserName,
 }: OwnerEditorProps) {
     const [open, setOpen] = useState(false);
     const [pending, setPending] = useState<Set<string>>(new Set());
@@ -122,16 +99,11 @@ export default function OwnerEditor({
         return () => document.removeEventListener('mousedown', close);
     }, [open]);
 
-    // 候选成员（仅 open 时加载）: Matter 所有关联 channel 成员的并集
-    const { members } = useMembersFromChannels(candidateChannels, {
-        enabled: open,
-    });
-
   const assignedUids = useMemo(() => new Set(assignees.map((a) => a.user_id)), [assignees]);
 
-  // 合并候选列表：当前负责人 + 成员列表（去重）
-  // 保证即使成员列表未包含当前负责人（比如跨群），也能看到并取消选择
-  const candidates = useMemo(() => {
+  // 合并候选列表：当前负责人 + candidates（去重）
+  // 保证即使 candidates 未包含当前负责人（比如跨群），也能看到并取消选择
+  const mergedCandidates = useMemo(() => {
     const seen = new Set<string>();
     const list: { uid: string; name?: string }[] = [];
     for (const a of assignees) {
@@ -139,13 +111,13 @@ export default function OwnerEditor({
       seen.add(a.user_id);
       list.push({ uid: a.user_id });
     }
-    for (const m of members) {
-      if (seen.has(m.uid)) continue;
-      seen.add(m.uid);
-      list.push({ uid: m.uid, name: m.name });
+    for (const c of candidates) {
+      if (seen.has(c.uid)) continue;
+      seen.add(c.uid);
+      list.push({ uid: c.uid, name: c.name });
     }
     return list;
-  }, [assignees, members]);
+  }, [assignees, candidates]);
 
   const handleToggle = useCallback(
     async (uid: string) => {
@@ -172,6 +144,17 @@ export default function OwnerEditor({
     [assignedUids, assignees.length, onToggle, pending],
   );
 
+  const resolveName = useCallback(
+    (uid: string, fallback?: string): string => {
+      if (resolveUserName) {
+        const resolved = resolveUserName(uid);
+        if (resolved) return resolved;
+      }
+      return fallback || uid;
+    },
+    [resolveUserName],
+  );
+
   const triggerClass = `wk-owner-editor__trigger${canEdit ? '' : ' is-readonly'}`;
   const triggerProps = canEdit
     ? { onClick: () => setOpen((o) => !o), type: 'button' as const }
@@ -194,10 +177,7 @@ export default function OwnerEditor({
                 zIndex: assignees.length - i,
               }}
             >
-              <WKAvatar
-                channel={new Channel(a.user_id, ChannelTypePerson)}
-                style={{ width: 16, height: 16 }}
-              />
+              {renderAvatar(a.user_id, 16)}
             </span>
           ))}
         </span>
@@ -205,7 +185,7 @@ export default function OwnerEditor({
           {assignees.map((a, i) => (
             <React.Fragment key={a.user_id}>
               {i > 0 && '、'}
-              <OwnerNameInline uid={a.user_id} />
+              <OwnerNameInline uid={a.user_id} resolveName={resolveName} />
             </React.Fragment>
           ))}
         </span>
@@ -219,12 +199,12 @@ export default function OwnerEditor({
                     <div className="wk-owner-editor__hint wk-owner-editor__hint--sub">
                         候选人来自 Matter 关联的群
                     </div>
-                    {candidates.length === 0 && (
+                    {mergedCandidates.length === 0 && (
                         <div className="wk-owner-editor__empty">
                             暂无可选成员
                         </div>
                     )}
-                    {candidates.map((c) => {
+                    {mergedCandidates.map((c) => {
                         const picked = assignedUids.has(c.uid);
                         const isLast = picked && assignees.length <= 1;
                         const isPending = pending.has(c.uid);
@@ -238,13 +218,14 @@ export default function OwnerEditor({
                         const disabled =
                           isLast || isPending || (picked && !canRemoveThis);
                         return (
-                            <OwnerOptionConnected
+                            <OwnerOption
                                 key={c.uid}
                                 uid={c.uid}
+                                name={resolveName(c.uid, c.name)}
                                 picked={picked}
                                 onClick={() => handleToggle(c.uid)}
                                 disabled={disabled}
-                                fallbackName={c.name}
+                                renderAvatar={renderAvatar}
                             />
                         );
                     })}
@@ -254,8 +235,7 @@ export default function OwnerEditor({
   );
 }
 
-// 内联的 UserName（避免引进外层 UserName 组件的 className 约束）
-function OwnerNameInline({ uid }: { uid: string }) {
-  const name = useUserName(uid);
-  return <>{name || uid}</>;
+// 内联的 UserName（使用 resolveUserName prop 而非 hook）
+function OwnerNameInline({ uid, resolveName }: { uid: string; resolveName: (uid: string, fallback?: string) => string }) {
+  return <>{resolveName(uid)}</>;
 }

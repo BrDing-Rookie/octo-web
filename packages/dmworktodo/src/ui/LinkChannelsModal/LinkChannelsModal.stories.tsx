@@ -2,6 +2,17 @@ import React from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import LinkChannelsModal from './index'
 import type { MatterChannel } from '../../bridge/types'
+import type { ChannelOption } from './index'
+
+const mockLoadChannels = async (): Promise<ChannelOption[]> => [
+  { channelId: 'ch-001', channelType: 2, name: '产品负责人群', desc: '产品方向讨论', memberCount: 12 },
+  { channelId: 'ch-002', channelType: 2, name: '技术架构群', desc: '技术方案评审', memberCount: 8 },
+  { channelId: 'ch-003', channelType: 2, name: '设计评审群', memberCount: 5 },
+]
+
+const mockOnLinkChannel = async (_matterId: string, _channelId: string, _channelType: number, _channelName: string) => {
+  // no-op for stories
+}
 
 const meta: Meta<typeof LinkChannelsModal> = {
   title: 'Matter/LinkChannelsModal',
@@ -34,6 +45,8 @@ export const Default: Story = {
     linkedChannels: [],
     onClose: () => {},
     onLinked: () => {},
+    loadChannels: mockLoadChannels,
+    onLinkChannel: mockOnLinkChannel,
   },
 }
 
@@ -48,6 +61,8 @@ export const WithLinkedChannels: Story = {
     linkedChannels: mockLinkedChannels,
     onClose: () => {},
     onLinked: () => {},
+    loadChannels: mockLoadChannels,
+    onLinkChannel: mockOnLinkChannel,
   },
 }
 
@@ -62,6 +77,8 @@ export const LongMatterTitle: Story = {
     linkedChannels: [],
     onClose: () => {},
     onLinked: () => {},
+    loadChannels: mockLoadChannels,
+    onLinkChannel: mockOnLinkChannel,
   },
 }
 
@@ -75,5 +92,7 @@ export const Hidden: Story = {
     linkedChannels: [],
     onClose: () => {},
     onLinked: () => {},
+    loadChannels: mockLoadChannels,
+    onLinkChannel: mockOnLinkChannel,
   },
 }
