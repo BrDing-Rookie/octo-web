@@ -40,6 +40,7 @@ import {
   ChannelRef,
 } from "../../hooks/useMembersFromChannels";
 import { useUserName } from "../../hooks/useUserName";
+import { useUserNames } from "../../hooks/useUserName";
 import "./index.css";
 
 export interface MatterDetailPanelProps {
@@ -457,6 +458,17 @@ export default function MatterDetailPanel({
     return list;
   }, [matter?.assignees, ownerCandidateMembers]);
 
+  // 批量解析 OwnerEditor 里所有需要显示名字的 uid（assignees + candidates）
+  const ownerUidsToResolve = useMemo(
+    () => ownerCandidates.map((c) => c.uid),
+    [ownerCandidates],
+  );
+  const ownerNameMap = useUserNames(ownerUidsToResolve);
+  const resolveOwnerName = useCallback(
+    (uid: string) => ownerNameMap.get(uid) || "",
+    [ownerNameMap],
+  );
+
   // ── LinkChannelsModal: loadChannels / onLinkChannel callbacks ──
   const loadChannelsForModal = useCallback(async (): Promise<ChannelOption[]> => {
     const groups = await WKApp.dataSource.channelDataSource.groupSaveList();
@@ -703,6 +715,7 @@ export default function MatterDetailPanel({
                 candidates={ownerCandidates}
                 onToggle={handleToggleAssignee}
                 renderAvatar={renderAvatar}
+                resolveUserName={resolveOwnerName}
               />
               <span className="wk-mp-people__role">负责人</span>
             </div>
