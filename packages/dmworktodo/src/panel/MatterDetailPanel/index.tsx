@@ -141,6 +141,43 @@ export default function MatterDetailPanel({
   );
   const [linkModalOpen, setLinkModalOpen] = useState(false);
 
+  // Activities (变更记录): matter-level 审计日志。每次 matter 字段变更
+  // (title / description / status / assignee / channel 等) 后端会 record,
+  // 前端在 matter 加载时 + 每次 applyMatterUpdate 广播 wk:matter-updated 后
+  // 重新拉取, 保证 tab count + 列表都新鲜。
+  const [activities, setActivities] = useState<MatterActivity[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const loadActivities = useCallback(async () => {
+    if (!matterId) {
+      setActivities([]);
+      return;
+    }
+    setActivitiesLoading(true);
+    try {
+      const res = await listActivities(matterId, { limit: 100 });
+      setActivities(res.data || []);
+    } catch {
+      setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, [matterId]);
+  useEffect(() => {
+    loadActivities();
+  }, [loadActivities]);
+  // 订阅 wk:matter-updated: 当前面板自己 apply 更新或其他路径修改同一 matter
+  // 时都会触发, 需要重拉 activities 刷新 tab count 和列表。
+  useEffect(() => {
+    if (!matterId) return;
+    const handler = (data: { matterId: string }) => {
+      if (data?.matterId === matterId) loadActivities();
+    };
+    WKApp.mittBus.on("wk:matter-updated", handler);
+    return () => {
+      WKApp.mittBus.off("wk:matter-updated", handler);
+    };
+  }, [matterId, loadActivities]);
+
   // 每个 channel 的最新一条 timeline 条目 (用于 "最新进展" 展示)。
   // matter 加载后并发对每个关联 channel 调 listTimeline(limit=1),
   // 有数据 → 渲染 content; 无数据 → 隐藏 "最新进展" 块。
@@ -427,7 +464,7 @@ export default function MatterDetailPanel({
   }[] = [
     { id: "channels", label: "关联群聊", count: channels.length },
     { id: "outputs", label: "产出文件", count: 0 },
-    { id: "changelog", label: "变更记录", count: 0 },
+    { id: "changelog", label: "变更记录", count: activities.length },
   ];
 
   return (
@@ -755,7 +792,10 @@ export default function MatterDetailPanel({
 
         {/* ── Tab: 变更记录 (activities) ── */}
         {activeTab === "changelog" && (
-          <ActivityPanel matterId={matter.id} />
+          <ActivityPanel
+            activities={activities}
+            loading={activitiesLoading}
+          />
         )}
 
         {/* ── Footer ── */}
@@ -1430,9 +1470,13 @@ function ActivityContent({ activity }: { activity: MatterActivity }) {
   }
 }
 
-function ActivityPanel({ matterId }: { matterId: string }) {
-  const [activities, setActivities] = useState<MatterActivity[]>([]);
-  const [loading, setLoading] = useState(true);
+function ActivityPanel({
+  activities,
+  loading,
+}: {
+  activities: MatterActivity[];
+  loading: boolean;
+}) {
   const [sortNewest, setSortNewest] = useState(true);
   const [filter, setFilter] = useState("all");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -1447,26 +1491,6 @@ function ActivityPanel({ matterId }: { matterId: string }) {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [filterOpen]);
-
-  useEffect(() => {
-    let aborted = false;
-    setLoading(true);
-    listActivities(matterId, { limit: 100 })
-      .then((res) => {
-        if (aborted) return;
-        setActivities(res.data || []);
-      })
-      .catch(() => {
-        if (aborted) return;
-        setActivities([]);
-      })
-      .finally(() => {
-        if (!aborted) setLoading(false);
-      });
-    return () => {
-      aborted = true;
-    };
-  }, [matterId]);
 
   const filtered =
     filter === "all"
