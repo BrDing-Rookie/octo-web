@@ -1,118 +1,164 @@
-# DMWork Web
+<p align="center">
+  <img src="./docs/assets/logo-light.png#gh-light-mode-only" width="200" alt="OCTO">
+  <img src="./docs/assets/logo-dark.png#gh-dark-mode-only" width="200" alt="OCTO">
+</p>
 
-<a href="https://zh-hans.react.dev/" target="_blank" rel="noopener" style="display:inline-block;">
-	<img src="https://img.shields.io/badge/React-18-%236CB52D.svg?logo=React" alt="React" />
-</a> &nbsp;
-<a href="https://ts.nodejs.cn/" target="_blank" rel="noopener" style="display:inline-block;">
-	<img src="https://img.shields.io/badge/TypeScript-5.0.4-%236CB52D.svg?logo=TypeScript&logoColor=FFF" alt="TypeScript" />
-</a> &nbsp;
-<a href="https://turbo.build/repo" target="_blank" rel="noopener" style="display:inline-block;">
-	<img src="https://img.shields.io/badge/Turborepo-2.0.9-%236CB52D.svg?logo=Turbo&logoColor=FFF" alt="Turbo" />
-</a> &nbsp;
-<a href="https://semi.design/zh-CN/" target="_blank" rel="noopener" style="display:inline-block;">
-	<img src="https://img.shields.io/badge/Semi UI-2.24.2-%236CB52D.svg?logo=SemiUI" alt="SemiUI">
-</a> &nbsp;
+<p align="center">
+  <b>OCTO — the open workplace built for humans × AI agents.</b><br/>
+  <sub>Let <b>Lobsters</b> (OpenClaw-powered digital doubles) do the <i>thinking</i> and <i>doing</i>. You focus on <i>taste</i>.</sub>
+</p>
 
-## 简介
+<p align="center">
+  <a href="https://github.com/Mininglamp-OSS"><b>🏠 OCTO Home</b></a> ·
+  <a href="#-quickstart"><b>🚀 Quickstart</b></a> ·
+  <a href="#-octo-ecosystem"><b>📦 Ecosystem</b></a> ·
+  <a href="./CONTRIBUTING.md"><b>🤝 Contributing</b></a>
+</p>
 
-DMWork Web/PC 客户端，支持 Web、Mac、Windows、Linux 多平台。基于 React + TypeScript + Turborepo 构建的即时通讯前端。
+<p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
+  <a href="./README.zh.md"><img src="https://img.shields.io/badge/lang-简体中文-red.svg" alt="简体中文"></a>
+</p>
 
-## 项目结构
+---
 
-```
-dmwork-web/
-├── apps/web/              # 主应用入口
-├── packages/
-│   ├── dmworkbase/        # 基础组件和工具
-│   ├── dmworklogin/       # 登录/注册模块
-│   ├── dmworkcontacts/    # 联系人模块
-│   ├── dmworkdatasource/  # 数据源模块
-│   ├── eslint-config-custom/
-│   └── tsconfig/
-├── turbo.json
-└── package.json
-```
+> 🌐 **Read in**: **English** · [简体中文](README.zh.md)
 
-## 开发
+# OCTO Web
 
-> 要求 Node.js >= 20，pnpm 10.x
+> **Web & PC (Electron) client** for the OCTO messaging platform — one React codebase, two shipped surfaces.
 
-### 安装依赖
+`octo-web` is the TypeScript / React front-end that talks to
+[`octo-server`](https://github.com/Mininglamp-OSS/octo-server) over REST +
+WebSocket. The same codebase ships two ways: as a browser build (the canonical
+OCTO chat surface), and as an Electron-packaged desktop PC client.
+
+## 🌟 Why OCTO Web
+
+- **One codebase, two products.** Browser + PC (Electron) are built from the same `src/` — no parallel React trees, no diverging UX. Branch switches happen at platform-capability boundaries only.
+- **Lobster-ready UI.** First-class surfaces for AI agent conversations: streaming replies, typing indicator, inline tool-call previews, read receipts, agent-vs-human identity chips.
+- **Full bilingual shell.** English and Simplified Chinese ship together out of the box; i18n keys live in `src/locales/` and are enforced in CI.
+
+## 🚀 Quickstart
 
 ```bash
+git clone https://github.com/Mininglamp-OSS/octo-web.git
+cd octo-web
 pnpm install
-```
-
-### 本地开发
-
-```bash
 pnpm dev
 ```
 
-### 编译
+By default the web build expects an `octo-server` instance reachable at
+`http://localhost:8080`. Point it at your own server by copying
+`.env.example` to `.env.local` and editing the `VITE_API_*` values.
+
+## 📦 Modules / Architecture
+
+Top-level layout:
+
+| Path | Purpose |
+|---|---|
+| `src/pages/` | Route-level React views (chat, channels, org, settings) |
+| `src/components/` | Shared UI kit (message bubbles, inputs, agent chips, streaming renderers) |
+| `src/store/` | Client state (auth, channels, draft, agent orchestration UI state) |
+| `src/api/` | REST + WebSocket client talking to `octo-server` |
+| `src/locales/` | i18n resources (English · 简体中文) |
+| `electron/` | Electron main/renderer bootstrap for the PC build |
+| `docs/` | Design docs, architecture notes, screenshots |
+
+Key build targets:
 
 ```bash
-pnpm build
+pnpm build        # build the browser bundle
+pnpm pc:dev       # launch the Electron shell against the dev build
+pnpm pc:package   # produce a distributable PC bundle (macOS / Windows / Linux)
+pnpm test         # run unit + component tests
 ```
 
-### 清除缓存
+The PC Electron shell is intentionally thin — it hosts the same React app and
+forwards IPC for native capabilities (tray, notifications, file drop, auto-
+update). The browser build runs without any Electron dependency.
 
-```bash
-pnpm clean
+## 🔗 OCTO Ecosystem
+
+<!-- shared snippet: OCTO repo matrix. Keep identical across all 9 repos. -->
+
+```mermaid
+graph TD
+  subgraph Clients[Clients]
+    Web[octo-web<br/>Web / PC]
+    Android[octo-android<br/>Android]
+    iOS[octo-ios<br/>iOS]
+  end
+
+  subgraph Core[Core Services]
+    Server[octo-server<br/>Backend API]
+    Matter[octo-matter<br/>Task / Todo]
+    Summary[octo-smart-summary<br/>AI Summary]
+    Admin[octo-admin<br/>Admin Console]
+  end
+
+  subgraph Shared[Shared Libraries & Integrations]
+    Lib[octo-lib<br/>Core Go Library]
+    Adapters[octo-adapters<br/>Third-party Adapters]
+  end
+
+  Web --> Server
+  Android --> Server
+  iOS --> Server
+  Admin --> Server
+  Server --> Matter
+  Server --> Summary
+  Server --> Adapters
+  Server -.uses.-> Lib
+  Matter -.uses.-> Lib
+  Adapters -.uses.-> Lib
 ```
 
-## Docker 部署
+| Repository | Language | Role |
+|---|---|---|
+| [`octo-server`](https://github.com/Mininglamp-OSS/octo-server) | Go | Backend API · business orchestration · Lobster agent scheduling |
+| [`octo-matter`](https://github.com/Mininglamp-OSS/octo-matter) | Go | Task / Todo / Matter micro-service |
+| [`octo-smart-summary`](https://github.com/Mininglamp-OSS/octo-smart-summary) | Go | LLM-powered conversation summarisation |
+| [`octo-web`](https://github.com/Mininglamp-OSS/octo-web) | TypeScript / React | Web & PC (Electron) client |
+| [`octo-android`](https://github.com/Mininglamp-OSS/octo-android) | Kotlin / Java | Native Android client |
+| [`octo-ios`](https://github.com/Mininglamp-OSS/octo-ios) | Swift / Objective-C | Native iOS client |
+| [`octo-admin`](https://github.com/Mininglamp-OSS/octo-admin) | TypeScript / React | Admin console (tenant / org / user / channel management) |
+| [`octo-lib`](https://github.com/Mininglamp-OSS/octo-lib) | Go | Shared core library (protocol, crypto, storage, HTTP) |
+| [`octo-adapters`](https://github.com/Mininglamp-OSS/octo-adapters) | TypeScript / Python | Third-party integrations (IM bridges, AI channels) |
 
-### 构建镜像
+## 🧭 Philosophy
 
-```bash
-docker build -t dmwork-web:latest .
-```
+OCTO ships under three shared principles that apply to every repository in this matrix:
 
-### 运行
+1. **Local-first.** Anything that can run on the user's own box — chats, embeddings, agents — should. Your data stays yours; cloud is a choice, not a requirement.
+2. **Humans judge, AI thinks and acts.** Humans focus on *taste* (what matters, what's right, what to ship). Lobster agents — OpenClaw-powered digital doubles — carry the *thinking* and *execution* load.
+3. **Release-as-product.** Every open-source cut is shipped as a self-contained product, not a code dump: one squash per release, Apache 2.0, no internal baggage, reproducible from this repo alone.
 
-```bash
-docker run -d -p 82:80 \
-  -e API_URL=http://your-api-server:8090 \
-  dmwork-web:latest
-```
+## 🤝 Contributing
 
-或通过 docker-compose（参考 dmworkim 项目的 `docker/dmwork/docker-compose.yaml`）。
+We love pull requests! Before you open one, please read:
 
-## Electron 桌面版
+- [CONTRIBUTING.md](CONTRIBUTING.md) — workflow, branch model, commit style
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community expectations
 
-支持打包 Mac、Windows、Linux 桌面应用。
+For security issues please follow [SECURITY.md](SECURITY.md) instead of the public tracker.
 
-```bash
-# 开发调试
-yarn dev-ele
+## 📄 License
 
-# 先编译
-yarn build
+Apache License 2.0 — see [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for third-party attributions.
 
-# 打包 Mac
-yarn build-ele:mac
+## 🙏 Acknowledgments
 
-# 打包 Windows
-yarn build-ele:win
+`octo-web` owes its original scaffolding to:
 
-# 打包 Linux（在 apps/web 下执行）
-yarn build-ele:linux
-```
+- **[TangSengDaoDaoWeb](https://github.com/TangSengDaoDao/TangSengDaoDaoWeb)** — our upstream, by the TangSengDaoDao team.
+- **[WuKongIM](https://github.com/WuKongIM/WuKongIM)** — the real-time messaging core that `octo-server` drives behind this client.
 
-## 文档
+See [NOTICE](NOTICE) for the full attribution list and third-party component licenses.
 
-- [DEVELOPMENT.md](./DEVELOPMENT.md) — 前端开发规范（Token、组件分层、Storybook）
-- [AGENTS.md](./AGENTS.md) — AI Agent 编码规范
-- [CONTRIBUTING.md](./CONTRIBUTING.md) — 贡献指南
+---
 
-## 相关仓库
-
-- [dmworkim](https://github.com/yujiawei/dmworkim) — 服务端
-- [dmwork-adapters](https://github.com/yujiawei/dmwork-adapters) — AI Agent 适配器
-
-## License
-
-MIT
-
-<!-- guardian-nudge: 2026-04-26T21:59Z YUJ-53 deploy-poller content-nudge -->
+<p align="center">
+  <sub>Made with 🐙 by <b>OCTO Contributors</b> · <a href="https://github.com/Mininglamp-OSS">Mininglamp-OSS</a></sub>
+</p>

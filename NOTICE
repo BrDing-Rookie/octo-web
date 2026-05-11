@@ -1,0 +1,29 @@
+OCTO Web
+Copyright 2026 MININGLAMP Technology and the OCTO contributors
+
+This product includes software developed by the following projects:
+
+* TangSengDaoDaoWeb
+  https://github.com/TangSengDaoDao/TangSengDaoDaoWeb
+  Copyright TangSengDaoDao contributors
+  Licensed under the Apache License, Version 2.0
+  OCTO Web is a derivative work with significant modifications.
+
+* WuKongIM
+  https://github.com/WuKongIM/WuKongIM
+  Copyright WuKongIM contributors
+  Licensed under the Apache License, Version 2.0
+
+See LICENSE for full license text.
+
+--------------------------------------------------------------------
+Third-party components requiring attribution
+--------------------------------------------------------------------
+
+Third-party components requiring attribution:
+  - axe-core (MPL-2.0) — https://github.com/dequelabs/axe-core
+  - caniuse-lite (CC-BY-4.0) — https://github.com/browserslist/caniuse-lite
+
+A full dependency license inventory is maintained in the project's
+license audit report. For commercial use, please refer to each
+upstream project's license terms.

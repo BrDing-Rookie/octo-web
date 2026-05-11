@@ -1,133 +1,70 @@
-# Contributing to DMWork Web
+# Contributing to OCTO
 
-Thank you for your interest in contributing! Please read through these guidelines before submitting issues or pull requests.
+Thanks for your interest in contributing to OCTO! 🐙 We welcome contributions of all sizes.
 
-## Issue Workflow
+## Getting Started
 
-### Claiming an Issue
+1. **Fork** the repo and create your branch from `main`.
+2. **Install dependencies** — see the project's README for setup instructions.
+3. **Make your changes** — follow existing code style.
+4. **Add tests** — if you're fixing a bug or adding a feature, please add tests.
+5. **Update docs** — if behavior changes, update the README/docs accordingly.
+6. **Open a Pull Request** — fill in the PR template.
 
-**Before starting any work on an issue, you MUST:**
+## Development Workflow
 
-1. **Comment on the issue** to claim it — state that you are taking it on
-2. **Describe your proposed fix or implementation plan** in the same comment
-3. **Wait for acknowledgement** from a maintainer or team member before proceeding
+- All changes go through a Pull Request.
+- PRs must pass CI before merging.
+- PRs require at least one approving review from a maintainer.
+- We use squash-merge to keep history clean.
 
-This prevents duplicate work and ensures alignment on the approach. If an issue already has someone assigned or a claim comment, coordinate with them first.
-
-### Reporting Bugs
-
-- Use the [Bug Report](https://github.com/Mininglamp-OSS/octo-web/issues/new?template=bug_report.yml) template
-- Include steps to reproduce, expected vs actual behavior, and environment info
-- Attach screenshots or logs when possible
-
-### Requesting Features
-
-- Use the [Feature Request](https://github.com/Mininglamp-OSS/octo-web/issues/new?template=feature_request.yml) template
-- Describe the problem/motivation and your proposed solution
-- **Features require discussion before implementation** — do not submit a PR without prior agreement
-
-## Pull Request Workflow
-
-### Fork & Branch
-
-1. **Fork** the repository to your own GitHub account
-2. **Clone your fork** locally:
-   ```bash
-   git clone https://github.com/<your-username>/dmwork-web.git
-   cd dmwork-web
-   ```
-3. **Add upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/Mininglamp-OSS/octo-web.git
-   ```
-4. **Create a branch from the latest upstream main**:
-   ```bash
-   git fetch upstream
-   git checkout -b fix/issue-<number>-<short-description> upstream/main
-   ```
-5. **Push to your fork** and open a PR against `Mininglamp-OSS/octo-web:main`
-
-### Branch Naming
-
-```
-fix/issue-<number>-<short-description>
-feat/issue-<number>-<short-description>
-docs/<short-description>
-chore/<short-description>
-```
-
-### Commit Messages
+## Commit Messages
 
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-fix: correct reminder filter logic (#20)
-feat: add dark mode toggle
-docs: add CONTRIBUTING.md
-chore: update dependencies
+feat: add user presence API
+fix: resolve message ordering race condition
+docs: update README install steps
+chore: bump dependency versions
 ```
 
-### PR Requirements
+## Pull Request Description
 
-- **One PR per issue** — do not mix unrelated changes
-- **Reference the issue** in the PR description (e.g., `Fixes #20`)
-- **Fill out the PR template** completely
-- **Ensure CI passes** before requesting review
-- **Keep PRs small and focused** — easier to review, faster to merge
-
-### Code Review
-
-- All PRs require at least one review before merging
-- Address review comments promptly
-- Use inline review comments tied to specific code lines
-
-### AI-Assisted Contributions
-
-If AI tools were used in creating the PR:
-- Note it in the PR description
-- Indicate the level of testing (untested / lightly tested / fully tested)
-- Confirm you understand the code changes
-
-## Development Setup
-
-### Prerequisites
-
-- Node.js >= 20
-- pnpm 10.x
-
-### Getting Started
-
-```bash
-# Fork the repo on GitHub, then:
-git clone https://github.com/<your-username>/dmwork-web.git
-cd dmwork-web
-git remote add upstream https://github.com/Mininglamp-OSS/octo-web.git
-
-# Install dependencies
-pnpm install
-
-# Start development server
-pnpm dev
-```
-
-### Project Structure
-
-```
-apps/web/              — Main application (Web + Electron + Tauri)
-packages/
-  dmworkbase/          — Core components and utilities
-  dmworklogin/         — Login/registration module
-  dmworkcontacts/      — Contacts module
-  dmworkdatasource/    — Data source module
-```
+- Describe **what** you changed and **why**.
+- Reference any related issues (e.g. `Fixes #123`).
+- Include screenshots for UI changes.
+- **Write PR descriptions in English** to keep the history accessible to the global community.
 
 ## Code Style
 
-- TypeScript strict mode
-- Use specific types — avoid `any`
-- Follow existing patterns in the codebase
-- Use Semi UI components for new UI elements
+- **Go**: `gofmt` + `golangci-lint`
+- **TypeScript/JavaScript**: Prettier + ESLint (config in repo)
+- **Swift**: SwiftFormat
+- **Kotlin**: ktlint / Android Studio default
+
+## Reporting Bugs
+
+Open a GitHub issue using the **Bug Report** template. Include:
+
+- Expected vs actual behavior
+- Steps to reproduce
+- Environment (OS, version, etc.)
+- Logs/screenshots if relevant
+
+## Suggesting Features
+
+Open a GitHub issue using the **Feature Request** template. Explain the
+use case and why existing features don't solve it.
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the
+project's [Apache License 2.0](LICENSE).
 
 ## Questions?
 
-Open a [Discussion](https://github.com/Mininglamp-OSS/octo-web/discussions) for general questions.
+- Open a [GitHub Discussion](https://github.com/orgs/Mininglamp-OSS/discussions)
+- Read the [docs](https://docs.octo.chat) _(coming soon)_
+
+Thanks for helping make OCTO better! 🚀
