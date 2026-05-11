@@ -14,6 +14,7 @@ import {
   transitionMatter,
   deleteMatter,
   linkChannel,
+  unlinkChannel,
   listTimeline,
   addTimelineEntry,
   deleteTimelineEntry,
@@ -313,22 +314,22 @@ export default function MatterDetailPanel({
     applyMatterUpdate(updated);
   }, [matter, applyMatterUpdate]);
 
-  // 取消关联功能暂时不实现，先注释掉
-  // const handleUnlinkChannel = useCallback(
-  //   async (chId: string) => {
-  //     if (!matter) return;
-  //     if (!window.confirm("确定取消关联此频道？")) return;
-  //     try {
-  //       await unlinkChannel(matter.id, chId);
-  //       const updated = await getMatter(matter.id);
-  //       applyMatterUpdate(updated);
-  //       Toast.success("已取消关联");
-  //     } catch {
-  //       Toast.error("取消关联失败");
-  //     }
-  //   },
-  //   [matter, applyMatterUpdate],
-  // );
+  // ── 取消关联群聊 ──
+  const handleUnlinkChannel = useCallback(
+    async (chId: string) => {
+      if (!matter) return;
+      if (!window.confirm("确定取消关联此频道？")) return;
+      try {
+        await unlinkChannel(matter.id, chId);
+        const updated = await getMatter(matter.id);
+        applyMatterUpdate(updated);
+        Toast.success("已取消关联");
+      } catch {
+        Toast.error("取消关联失败");
+      }
+    },
+    [matter, applyMatterUpdate],
+  );
 
   const handleDeleteTimeline = useCallback(
     async (entryId: string) => {
@@ -822,6 +823,7 @@ export default function MatterDetailPanel({
                       <ChannelMoreMenu
                         channelId={ch.channel_id}
                         channelType={ch.channel_type}
+                        onUnlink={() => handleUnlinkChannel(ch.channel_id)}
                       />
                     )}
                   </div>
@@ -1130,14 +1132,16 @@ function MoreMenu({ onDelete }: { onDelete: () => void }) {
   );
 }
 
-// ─── ChannelMoreMenu (查看群聊) ────────────────
+// ─── ChannelMoreMenu (查看群聊 / 取消关联) ────────────────
 
 function ChannelMoreMenu({
   channelId,
   channelType,
+  onUnlink,
 }: {
   channelId: string;
   channelType: number;
+  onUnlink: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
@@ -1201,8 +1205,7 @@ function ChannelMoreMenu({
             </svg>
             查看群聊
           </button>
-          {/* 取消关联功能暂时隐藏，待后续实现 */}
-          {/* <button
+          <button
             type="button"
             className="wk-mp-ch-more__item wk-mp-ch-more__item--danger"
             onClick={() => {
@@ -1222,7 +1225,7 @@ function ChannelMoreMenu({
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
             取消关联
-          </button> */}
+          </button>
         </div>
       )}
     </span>
