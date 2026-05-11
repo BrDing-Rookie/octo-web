@@ -482,6 +482,7 @@ export default function MatterDetailPanel({
               status={matter.status}
               onChange={handleStatusChange}
               isCreator={matter.creator_id === WKApp.loginInfo.uid}
+              canEditStatus={canEditOwner}
             />
             <EditableDeadline
               value={matter.deadline || null}
@@ -647,24 +648,26 @@ export default function MatterDetailPanel({
         {activeTab === "channels" && (
           <div className="wk-mp-channels">
             <div className="wk-mp-channels__toolbar">
-              <button
-                type="button"
-                className="wk-mp-channels__add"
-                onClick={handleLinkChannel}
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
+              {canForward && (
+                <button
+                  type="button"
+                  className="wk-mp-channels__add"
+                  onClick={handleLinkChannel}
                 >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                关联新群
-              </button>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  关联新群
+                </button>
+              )}
             </div>
             {channels.length === 0 ? (
               <div className="wk-mp-channels__empty">暂无关联群聊</div>
@@ -870,10 +873,12 @@ function StatusPicker({
   status,
   onChange,
   isCreator,
+  canEditStatus,
 }: {
   status: MatterStatus;
   onChange: (s: MatterStatus) => void;
   isCreator: boolean;
+  canEditStatus: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -892,6 +897,7 @@ function StatusPicker({
   const current =
     STATUS_OPTIONS.find((o) => o.value === status) || STATUS_OPTIONS[0];
   const isArchived = status === "archived";
+  const isDisabled = isArchived || !canEditStatus;
 
   return (
     <span className="wk-mp-status-wrap" ref={ref}>
@@ -899,16 +905,22 @@ function StatusPicker({
         type="button"
         className={`wk-mp-pill ${current.cls}`}
         onClick={() => {
-          if (!isArchived) setOpen(!open);
+          if (!isDisabled) setOpen(!open);
         }}
-        title={isArchived ? "已归档事项不可修改状态" : "点击修改状态"}
-        style={isArchived ? { cursor: "not-allowed", opacity: 0.8 } : undefined}
-        disabled={isArchived}
+        title={
+          isArchived
+            ? "已归档事项不可修改状态"
+            : !canEditStatus
+              ? "仅发起人或负责人可修改状态"
+              : "点击修改状态"
+        }
+        style={isDisabled ? { cursor: "not-allowed", opacity: 0.8 } : undefined}
+        disabled={isDisabled}
       >
         <span className="wk-mp-pill__dot" />
         {current.label}
       </button>
-      {open && !isArchived && (
+      {open && !isDisabled && (
         <div className="wk-mp-status-dropdown">
           {visibleOptions.map((opt) => (
             <button

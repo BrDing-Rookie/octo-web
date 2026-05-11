@@ -82,7 +82,20 @@ export default function ChatMatterPanel({
     }
   }, [matters]);
 
-  const displayMatters = matters;
+  const currentUid = WKApp.loginInfo.uid;
+  const displayMatters = (() => {
+    switch (activeTab) {
+      case "mine":
+        return matters.filter(
+          (m) => m.assignees?.some((a) => a.user_id === currentUid),
+        );
+      case "created":
+        return matters.filter((m) => m.creator_id === currentUid);
+      case "all":
+      default:
+        return matters;
+    }
+  })();
 
   const TABS: Array<{ id: Tab; label: string }> = [
     { id: "mine", label: "我负责的" },

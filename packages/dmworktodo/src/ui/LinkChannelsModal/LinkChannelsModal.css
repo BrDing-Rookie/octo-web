@@ -143,8 +143,8 @@
 }
 
 .wk-lcm__check.is-checked {
-  background: var(--wk-matter-accent, #7c3aed);
-  border-color: var(--wk-matter-accent, #7c3aed);
+  background: var(--wk-color-accent);
+  border-color: var(--wk-color-accent);
 }
 
 .wk-lcm__check.is-linked {

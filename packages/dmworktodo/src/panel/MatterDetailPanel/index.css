@@ -2,13 +2,6 @@
  * MatterDetailPanel — 严格对齐原型 v19
  */
 
-/* Matter 模块局部 token（紫色品牌色，原型指定） */
-:root {
-  --wk-matter-accent: #8b5cf6;
-  --wk-matter-accent-text: #6d28d9;
-  --wk-matter-accent-bg: rgba(139, 92, 246, 0.04);
-}
-
 /* ─── Main container ─────────────────────────────────── */
 .wk-mp-main {
   flex: 1;
@@ -269,15 +262,15 @@ input.wk-mp-header__title--editing {
 .wk-mp-goal {
   margin-top: 16px;
   padding: 12px 16px;
-  border-left: 3px solid var(--wk-matter-accent, #8b5cf6);
-  background: var(--wk-matter-accent-bg, rgba(139, 92, 246, 0.04));
+  border-left: 3px solid var(--wk-color-accent);
+  background: var(--wk-purple-alpha-04);
   border-radius: 0 6px 6px 0;
 }
 
 .wk-mp-goal__label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--wk-matter-accent-text, #6d28d9);
+  color: var(--wk-color-accent-hover);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-bottom: 6px;
@@ -349,7 +342,7 @@ textarea.wk-mp-goal__text--editing {
 
 .wk-mp-goal__source-anchor {
   font-size: 10px;
-  color: var(--wk-matter-accent, #8b5cf6);
+  color: var(--wk-color-accent);
   font-weight: 500;
 }
 
@@ -564,15 +557,15 @@ textarea.wk-mp-goal__text--editing {
 .wk-mp-channels__card-progress {
   margin-top: 4px;
   padding: 8px 12px;
-  border-left: 2px solid var(--wk-matter-accent, #a78bfa);
-  background: rgba(139, 92, 246, 0.06);
+  border-left: 2px solid var(--wk-color-accent);
+  background: var(--wk-purple-alpha-06);
   border-radius: 0 6px 6px 0;
 }
 
 .wk-mp-channels__card-progress-label {
   font-size: 10px;
   font-weight: 600;
-  color: var(--wk-matter-accent-text, #7c3aed);
+  color: var(--wk-color-accent-hover);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 4px;
