@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from "react";
 import { WKApp } from "@octo/base";
+import WKAvatar from "@octo/base/src/Components/WKAvatar";
+import { Channel, ChannelTypePerson } from "wukongimjssdk";
 import { Toast } from "@douyinfe/semi-ui";
 import type { MatterListParams } from "../bridge/types";
 import { createMatter } from "../api/todoApi";
@@ -7,6 +9,7 @@ import { useMatterList } from "../hooks/useTodoList";
 import MatterDetailPanel from "../panel/MatterDetailPanel";
 import SmartCreateModal from "../ui/SmartCreateModal";
 import SidebarCard from "../ui/SidebarCard";
+import UserName from "../ui/UserName";
 import "./MatterPage.css";
 
 /**
@@ -47,6 +50,22 @@ export default function MatterPage() {
   });
 
   const myUid = WKApp.loginInfo.uid ?? "";
+
+  // ── UI/数据分离: 为 ui/ 组件提供 renderAvatar / renderUserName ──
+  const renderAvatar = useCallback(
+    (uid: string, size: number) => (
+      <WKAvatar
+        channel={new Channel(uid, ChannelTypePerson)}
+        style={{ width: size, height: size }}
+      />
+    ),
+    [],
+  );
+  const renderUserName = useCallback(
+    (uid: string) => <UserName uid={uid} />,
+    [],
+  );
+
   const initialFilters = useMemo(
     () => buildParams(activeTab, myUid),
     [activeTab, myUid],
@@ -212,6 +231,9 @@ export default function MatterPage() {
               matter={matter}
               selected={matter.id === selectedMatterId}
               onClick={() => handleSelect(matter.id)}
+              renderAvatar={renderAvatar}
+              renderUserName={renderUserName}
+              sourceChannelName={matter.source_name}
             />
           ))}
 
@@ -237,6 +259,9 @@ export default function MatterPage() {
               matter={matter}
               selected={matter.id === selectedMatterId}
               onClick={() => handleSelect(matter.id)}
+              renderAvatar={renderAvatar}
+              renderUserName={renderUserName}
+              sourceChannelName={matter.source_name}
             />
           ))}
 

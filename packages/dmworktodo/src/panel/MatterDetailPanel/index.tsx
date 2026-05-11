@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from "react";
+﻿import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { DatePicker } from "@douyinfe/semi-ui";
 import type {
   MatterDetail,
@@ -22,10 +22,12 @@ import {
   removeAssignee,
   listActivities,
 } from "../../api/todoApi";
+import { getMessageByChannel } from "../../api/imMessageApi";
 import { Toast } from "../../utils/toast";
 import { toParentGroupNo } from "../../utils/channelId";
 import UserName from "../../ui/UserName";
 import LinkChannelsModal from "../../ui/LinkChannelsModal";
+import type { ChannelOption } from "../../ui/LinkChannelsModal";
 import OwnerEditor from "../../ui/OwnerEditor";
 import AnchorPopover from "../../ui/AnchorPopover";
 import WKAvatar from "@octo/base/src/Components/WKAvatar";
@@ -33,6 +35,11 @@ import { Channel, ChannelTypePerson } from "wukongimjssdk";
 import { WKApp } from "@octo/base";
 import { useChannelName } from "../../hooks/useChannelName";
 import { useMyGroups } from "../../hooks/useMyGroups";
+import {
+  useMembersFromChannels,
+  ChannelRef,
+} from "../../hooks/useMembersFromChannels";
+import { useUserName } from "../../hooks/useUserName";
 import "./index.css";
 
 export interface MatterDetailPanelProps {
@@ -395,6 +402,84 @@ export default function MatterDetailPanel({
   //   - 拉取失败时 failed=true, 保守处理成 "全部未加入" (宁可多遮)
   const { groupNos: myGroupNos, failed: myGroupsFailed } = useMyGroups();
 
+  // ── UI/数据分离: 为 ui/ 组件提供 renderAvatar / renderUserName ──
+  const renderAvatar = useCallback(
+    (uid: string, size: number) => (
+      <WKAvatar
+        channel={new Channel(uid, ChannelTypePerson)}
+        style={{ width: size, height: size }}
+      />
+    ),
+    [],
+  );
+  const renderUserName = useCallback(
+    (uid: string) => <UserName uid={uid} />,
+    [],
+  );
+
+  // ── OwnerEditor: 候选成员来源 channel 列表 (hook 必须在 early return 前) ──
+  const ownerCandidateChannelRefs: ChannelRef[] = useMemo(() => {
+    const seen = new Set<string>();
+    const list: ChannelRef[] = [];
+    const push = (id: string | undefined | null, type: number | undefined | null) => {
+      if (!id || type === undefined || type === null) return;
+      const key = `${id}:${type}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push({ channelId: id, channelType: type });
+    };
+    for (const ch of matter?.channels || []) {
+      push(ch.channel_id, ch.channel_type);
+    }
+    if (matter) push(matter.source_channel_id, matter.source_channel_type);
+    return list;
+  }, [matter?.channels, matter?.source_channel_id, matter?.source_channel_type]);
+
+  const { members: ownerCandidateMembers } = useMembersFromChannels(
+    ownerCandidateChannelRefs,
+    { enabled: true },
+  );
+
+  // 合并 assignees + members 为 OwnerEditor 的 candidates prop
+  const ownerCandidates = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Array<{ uid: string; name?: string }> = [];
+    for (const a of matter?.assignees || []) {
+      if (seen.has(a.user_id)) continue;
+      seen.add(a.user_id);
+      list.push({ uid: a.user_id });
+    }
+    for (const m of ownerCandidateMembers) {
+      if (seen.has(m.uid)) continue;
+      seen.add(m.uid);
+      list.push({ uid: m.uid, name: m.name });
+    }
+    return list;
+  }, [matter?.assignees, ownerCandidateMembers]);
+
+  // ── LinkChannelsModal: loadChannels / onLinkChannel callbacks ──
+  const loadChannelsForModal = useCallback(async (): Promise<ChannelOption[]> => {
+    const groups = await WKApp.dataSource.channelDataSource.groupSaveList();
+    return (groups as any[]).map((g: any) => ({
+      channelId: g.channel?.channelID || g.channel_id || "",
+      channelType: g.channel?.channelType || 2,
+      name: g.title || g.name || "",
+      desc: g.remark || g.desc || "",
+      memberCount: g.memberCount || g.member_count || undefined,
+    }));
+  }, []);
+
+  const handleLinkChannelSubmit = useCallback(
+    async (mId: string, chId: string, chType: number, chName: string) => {
+      await linkChannel(mId, {
+        channel_id: chId,
+        channel_type: chType,
+        channel_name: chName,
+      });
+    },
+    [],
+  );
+
   // ── Empty / Loading / Error ──
 
   if (!matterId || loading || error || !matter) {
@@ -417,27 +502,6 @@ export default function MatterDetailPanel({
     !!currentUid &&
     (matter.creator_id === currentUid ||
       assignees.some((a) => a.user_id === currentUid));
-  // 候选成员来源: Matter 所有关联 channel 成员的并集 (PRD §5.1)。
-  //   - matter.channels 是通过 POST /matters/:id/channels 关联的所有群
-  //   - matter.source_channel 是创建时的发起群, 通常也在 matter.channels 里,
-  //     但为了兼容极端数据 (例如关联后又解绑了发起群) 再做一次 union
-  //   - 按 (channel_id, channel_type) 去重后传给 OwnerEditor
-  const ownerCandidateChannels = (() => {
-    const seen = new Set<string>();
-    const list: { channelId: string; channelType: number }[] = [];
-    const push = (id: string | undefined | null, type: number | undefined | null) => {
-      if (!id || type === undefined || type === null) return;
-      const key = `${id}:${type}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      list.push({ channelId: id, channelType: type });
-    };
-    for (const ch of matter.channels || []) {
-      push(ch.channel_id, ch.channel_type);
-    }
-    push(matter.source_channel_id, matter.source_channel_type);
-    return list;
-  })();
 
   // 头部 "关联新群" 按钮的权限: 先沿用 canEditOwner (发起人 + 负责人 可见)。
   // PRD §5.2 要点 [3] 允许关联成员多选关联 / 一键拉群, 但那是 IM 多选触发
@@ -636,8 +700,9 @@ export default function MatterDetailPanel({
                 canEdit={canEditOwner}
                 currentUid={currentUid || ""}
                 isCreator={matter.creator_id === currentUid}
-                candidateChannels={ownerCandidateChannels}
+                candidates={ownerCandidates}
                 onToggle={handleToggleAssignee}
+                renderAvatar={renderAvatar}
               />
               <span className="wk-mp-people__role">负责人</span>
             </div>
@@ -860,6 +925,8 @@ export default function MatterDetailPanel({
         linkedChannels={channels}
         onClose={() => setLinkModalOpen(false)}
         onLinked={handleLinked}
+        loadChannels={loadChannelsForModal}
+        onLinkChannel={handleLinkChannelSubmit}
       />
 
       {/* 原消息上下文弹框 */}
@@ -872,6 +939,9 @@ export default function MatterDetailPanel({
           x={anchor.x}
           y={anchor.y}
           onClose={() => setAnchor(null)}
+          fetchMessage={getMessageByChannel}
+          renderAvatar={renderAvatar}
+          renderUserName={renderUserName}
         />
       )}
     </main>

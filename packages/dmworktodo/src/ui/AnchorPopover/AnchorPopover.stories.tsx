@@ -1,6 +1,44 @@
 import React from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import AnchorPopover from './index'
+import type { IMMessageResp } from '../../api/imMessageApi'
+
+const mockRenderAvatar = (uid: string, size: number) => (
+  <span
+    style={{
+      display: 'inline-block',
+      width: size,
+      height: size,
+      borderRadius: '50%',
+      background: '#ccc',
+      fontSize: size * 0.5,
+      lineHeight: `${size}px`,
+      textAlign: 'center',
+      color: '#666',
+    }}
+  >
+    {uid.slice(0, 2)}
+  </span>
+)
+
+const mockRenderUserName = (uid: string) => (
+  <span>{uid.slice(0, 8)}</span>
+)
+
+const mockFetchMessage = async (params: {
+  channelId: string;
+  channelType: number;
+  messageId: string;
+}): Promise<IMMessageResp> => {
+  // Simulate network delay
+  await new Promise((r) => setTimeout(r, 500))
+  return {
+    message_id: params.messageId,
+    from_uid: 'user-abc123',
+    timestamp: Math.floor(Date.now() / 1000) - 3600,
+    payload: { type: 1, content: '这是一条模拟的消息内容，用于 Storybook 展示。' },
+  } as IMMessageResp
+}
 
 const meta: Meta<typeof AnchorPopover> = {
   title: 'Matter/AnchorPopover',
@@ -30,6 +68,9 @@ export const Default: Story = {
     x: 200,
     y: 100,
     onClose: () => {},
+    fetchMessage: mockFetchMessage,
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -45,6 +86,9 @@ export const ThreadChannel: Story = {
     x: 200,
     y: 100,
     onClose: () => {},
+    fetchMessage: mockFetchMessage,
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -65,6 +109,9 @@ export const MultipleMessages: Story = {
     x: 300,
     y: 150,
     onClose: () => {},
+    fetchMessage: mockFetchMessage,
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }
 
@@ -78,5 +125,8 @@ export const Centered: Story = {
     messageIds: ['2049456264156450816'],
     channelName: '产品负责人群',
     onClose: () => {},
+    fetchMessage: mockFetchMessage,
+    renderAvatar: mockRenderAvatar,
+    renderUserName: mockRenderUserName,
   },
 }

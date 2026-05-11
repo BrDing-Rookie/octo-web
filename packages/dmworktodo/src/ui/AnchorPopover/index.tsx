@@ -1,10 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Channel, ChannelTypePerson } from 'wukongimjssdk';
-import WKAvatar from '@octo/base/src/Components/WKAvatar';
-import UserName from '../UserName';
-import { useChannelName } from '../../hooks/useChannelName';
 import type { IMMessageResp } from '../../api/imMessageApi';
-import { getMessageByChannel as defaultGetMessage } from '../../api/imMessageApi';
 import './index.css';
 
 /**
@@ -44,8 +39,12 @@ export interface AnchorPopoverProps {
     x?: number;
     y?: number;
     onClose: () => void;
-    /** 外部注入的消息获取函数（UI/数据分离）。未传时使用内置 getMessageByChannel。 */
-    fetchMessage?: (params: { channelId: string; channelType: number; messageId: string }) => Promise<IMMessageResp>;
+    /** 外部注入的消息获取函数（UI/数据分离）。 */
+    fetchMessage: (params: { channelId: string; channelType: number; messageId: string }) => Promise<IMMessageResp>;
+    /** Render an avatar for the given uid at the given pixel size */
+    renderAvatar: (uid: string, size: number) => React.ReactNode;
+    /** Render a user name inline for the given uid */
+    renderUserName: (uid: string) => React.ReactNode;
 }
 
 interface LoadedMessage {
@@ -69,16 +68,15 @@ export default function AnchorPopover({
     y,
     onClose,
     fetchMessage,
+    renderAvatar,
+    renderUserName,
 }: AnchorPopoverProps) {
     const [results, setResults] = useState<FetchResult[]>([]);
     const [loading, setLoading] = useState(true);
     const bodyRef = useRef<HTMLDivElement>(null);
 
-    // 优先用 WKSDK 反查的最新群名, 未命中时用调用方传的 channelName 兜底,
-    // 最后兜底到 channel id 前缀。跟 MatterDetailPanel 里 liveSourceName 同逻辑。
-    const liveChannelName = useChannelName(channelId, channelType);
     const displayChannelName =
-        liveChannelName || channelName || channelId.slice(0, 8);
+        channelName || channelId.slice(0, 8);
 
     // ESC 关闭
     useEffect(() => {
@@ -100,12 +98,11 @@ export default function AnchorPopover({
             return;
         }
         setLoading(true);
-        const getMessage = fetchMessage || defaultGetMessage;
         Promise.all(
             messageIds.map(
                 async (mid): Promise<FetchResult> => {
                     try {
-                        const data = await getMessage({
+                        const data = await fetchMessage({
                             channelId,
                             channelType,
                             messageId: mid,
@@ -137,7 +134,7 @@ export default function AnchorPopover({
             aborted = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [channelId, channelType, ids]);
+    }, [channelId, channelType, ids, fetchMessage]);
 
     const onMaskClick = useCallback(() => {
         onClose();
@@ -188,7 +185,12 @@ export default function AnchorPopover({
                     )}
                     {!loading &&
                         results.map((r) => (
-                            <MessageRow key={r.id} result={r} />
+                            <MessageRow
+                                key={r.id}
+                                result={r}
+                                renderAvatar={renderAvatar}
+                                renderUserName={renderUserName}
+                            />
                         ))}
                 </div>
             </div>
@@ -198,7 +200,15 @@ export default function AnchorPopover({
 
 // ─── 单条消息行 ──────────────────────────────────────
 
-function MessageRow({ result }: { result: FetchResult }) {
+function MessageRow({
+    result,
+    renderAvatar,
+    renderUserName,
+}: {
+    result: FetchResult;
+    renderAvatar: (uid: string, size: number) => React.ReactNode;
+    renderUserName: (uid: string) => React.ReactNode;
+}) {
     if (!result.ok) {
         return (
             <div className="wk-anchor-pop__msg wk-anchor-pop__msg--missing">
@@ -220,16 +230,11 @@ function MessageRow({ result }: { result: FetchResult }) {
                 {formatTime(msg.timestamp)}
             </span>
             <span className="wk-anchor-pop__msg-avatar">
-                <WKAvatar
-                    channel={
-                        new Channel(msg.from_uid, ChannelTypePerson)
-                    }
-                    style={{ width: 18, height: 18 }}
-                />
+                {renderAvatar(msg.from_uid, 18)}
             </span>
             <div className="wk-anchor-pop__msg-content">
                 <div className="wk-anchor-pop__msg-name">
-                    <UserName uid={msg.from_uid} />
+                    {renderUserName(msg.from_uid)}
                 </div>
                 <div className="wk-anchor-pop__msg-text">
                     {extractDisplayText(msg)}
