@@ -267,8 +267,7 @@ export default function MatterDetailPanel({
         applyMatterUpdate(updated);
       } catch (err: any) {
         setMatter((prev) => (prev ? { ...prev, status: oldStatus } : prev));
-        const msg =
-          err?.response?.data?.error?.message || err?.message || "状态修改失败";
+        const msg = err?.message || "状态修改失败";
         if (msg.includes("only creator")) {
           Toast.error("仅创建人可以归档/取消归档");
         } else {
@@ -342,7 +341,7 @@ export default function MatterDetailPanel({
         });
         setTimeline((prev) => [entry, ...prev]);
       } catch (e: any) {
-        const code = e?.response?.data?.error?.code;
+        const code = e?.code;
         if (code === "LLM_UPSTREAM_ERROR") {
           Toast.error("AI 服务暂时不可用，请稍后重试");
         } else {
@@ -369,7 +368,6 @@ export default function MatterDetailPanel({
         applyMatterUpdate(updated);
       } catch (err: any) {
         const msg =
-          err?.response?.data?.error?.message ||
           err?.message ||
           (isCurrentlyAssigned ? "移除负责人失败" : "添加负责人失败");
         Toast.error(msg);

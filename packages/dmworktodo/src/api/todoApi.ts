@@ -51,16 +51,35 @@ matterAxios.interceptors.response.use(undefined, (err) => {
 });
 
 /**
- * Extract server error message from axios error response.
+ * Structured API error that preserves server error code and message.
+ * Callers can check `err.code` for specific error handling (e.g. LLM_UPSTREAM_ERROR).
  */
-function extractErrorMessage(err: unknown): string {
+export class ApiError extends Error {
+  code?: string;
+  status?: number;
+  constructor(message: string, code?: string, status?: number) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/**
+ * Extract server error message from axios error response.
+ * Returns an ApiError that preserves the structured error code.
+ */
+function extractApiError(err: unknown): ApiError {
   const axiosErr = err as {
-    response?: { data?: { error?: { message?: string } } };
+    response?: { status?: number; data?: { error?: { message?: string; code?: string } } };
   };
-  const msg = axiosErr?.response?.data?.error?.message;
-  const raw = msg || (err instanceof Error ? err.message : "Request failed");
+  const serverError = axiosErr?.response?.data?.error;
+  const msg = serverError?.message || (err instanceof Error ? err.message : "Request failed");
+  const code = serverError?.code;
+  const status = axiosErr?.response?.status;
   // Cap length to prevent pathologically long server error messages in toasts
-  return raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
+  const capped = msg.length > 200 ? msg.slice(0, 200) + "…" : msg;
+  return new ApiError(capped, code, status);
 }
 
 /**
@@ -109,7 +128,7 @@ async function get<T>(
       abortErr.name = "AbortError";
       throw abortErr;
     }
-    throw new Error(extractErrorMessage(err));
+    throw extractApiError(err);
   }
 }
 
@@ -118,7 +137,7 @@ async function post<T>(path: string, data?: unknown): Promise<T> {
     const resp = await matterAxios.post(`${BASE}${path}`, data);
     return resp.data;
   } catch (err: unknown) {
-    throw new Error(extractErrorMessage(err));
+    throw extractApiError(err);
   }
 }
 
@@ -127,7 +146,7 @@ async function put<T>(path: string, data?: unknown): Promise<T> {
     const resp = await matterAxios.put(`${BASE}${path}`, data);
     return resp.data;
   } catch (err: unknown) {
-    throw new Error(extractErrorMessage(err));
+    throw extractApiError(err);
   }
 }
 
@@ -136,7 +155,7 @@ async function del<T>(path: string): Promise<T> {
     const resp = await matterAxios.delete(`${BASE}${path}`);
     return resp.data;
   } catch (err: unknown) {
-    throw new Error(extractErrorMessage(err));
+    throw extractApiError(err);
   }
 }
 

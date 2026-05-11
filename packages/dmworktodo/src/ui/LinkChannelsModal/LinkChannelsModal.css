@@ -1,17 +1,14 @@
 /* LinkChannelsModal — 关联群聊弹窗（对齐原型 v19） */
 
-.wk-link-channels-modal .semi-modal-content {
-  padding: 0;
+/* 通过组件根节点覆盖 Semi Token 控制内边距 */
+.wk-link-channels-modal {
+  --semi-modal-content-padding: 0;
+  --semi-modal-header-margin: 0;
+  --semi-modal-body-wrapper-margin: 0;
+  --semi-modal-body-padding: 0;
 }
-.wk-link-channels-modal .semi-modal-header {
-  margin: 0;
+.wk-link-channels-modal [class*="semi-modal-header"] {
   display: none;
-}
-.wk-link-channels-modal .semi-modal-body-wrapper {
-  margin: 0;
-}
-.wk-link-channels-modal .semi-modal-body {
-  padding: 0;
 }
 
 .wk-lcm {

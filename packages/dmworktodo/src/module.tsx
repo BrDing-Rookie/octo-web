@@ -549,7 +549,7 @@ function GlobalMatterLinkMenu() {
               setAnchor(null);
               WKApp.mittBus.emit("wk:exit-multiple-mode");
             } catch (e: any) {
-              const code = e?.response?.data?.error?.code;
+              const code = e?.code;
               if (code === "LLM_UPSTREAM_ERROR") {
                 Toast.error("AI 服务暂时不可用，请稍后重试");
               } else {

@@ -35,12 +35,8 @@ export interface MatterLinkMenuProps {
   disabled?: boolean;
 }
 
-// TODO(backend): 替换为真实 API 调用
-const DEFAULT_MOCK_MATTERS: MatterLinkMenuItem[] = [
-  { id: "M-2451", title: "Octo 产品策略 PPT 打磨" },
-  { id: "M-2438", title: "AI 杠杆率纳入绩效体系" },
-  { id: "M-2402", title: "Kano 模型推广到所有产研群" },
-];
+// 无默认 mock 数据 — 调用方必须传入 matters prop
+// 如果未传，显示空列表
 
 class MatterLinkMenu extends Component<MatterLinkMenuProps> {
   private menuRef = React.createRef<HTMLDivElement>();
@@ -67,7 +63,7 @@ class MatterLinkMenu extends Component<MatterLinkMenuProps> {
 
   render() {
     const { anchorRef, onClose, onCreate, onPick, disabled } = this.props;
-    const matters = this.props.matters ?? DEFAULT_MOCK_MATTERS;
+    const matters = this.props.matters ?? [];
     const rect = anchorRef.current?.getBoundingClientRect();
     if (!rect) return null;
 
