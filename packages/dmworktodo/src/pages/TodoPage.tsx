@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
 import { WKApp } from "@octo/base";
 import { Toast } from "@douyinfe/semi-ui";
 import type { MatterListParams } from "../bridge/types";
@@ -78,8 +78,20 @@ export default function MatterPage() {
   // 详情面板编辑 matter (标题 / 主要目标 / DDL / 状态 / 负责人 / 关联群聊)
   // 后会广播 wk:matter-updated, 这里 reload 保证左侧列表拿到最新字段。
   // 详情面板删除 matter 后广播 wk:matter-deleted, 同样 reload 移除该条。
+  //
+  // 滚动位置锁定: reload 会整替 matters 数组 → 列表 DOM 重建 → scrollTop
+  // 被重置到 0, 用户看到的 "当前编辑的卡片" 跳走。解法是: 事件触发 reload
+  // 前抓一下当前 scrollTop 存到 ref, 新 matters 渲染完 useLayoutEffect 写回。
+  // 只在编辑 / 删除场景恢复, 用户主动切 tab / 空间切换时还是回顶 (期望)。
+  const listRef = useRef<HTMLDivElement>(null);
+  const pendingScrollRestoreRef = useRef<number | null>(null);
   useEffect(() => {
-    const reloader = () => reload();
+    const reloader = () => {
+      if (listRef.current) {
+        pendingScrollRestoreRef.current = listRef.current.scrollTop;
+      }
+      reload();
+    };
     WKApp.mittBus.on("wk:matter-updated", reloader);
     WKApp.mittBus.on("wk:matter-deleted", reloader);
     return () => {
@@ -87,6 +99,16 @@ export default function MatterPage() {
       WKApp.mittBus.off("wk:matter-deleted", reloader);
     };
   }, [reload]);
+  // matters 数组引用变化后 (新数据到达) 同步恢复 scrollTop。用 layoutEffect
+  // 而不是 effect, 是因为浏览器在 effect 之前就已经把 scrollTop 清零并 paint,
+  // useLayoutEffect 在 DOM mutation 后、浏览器 paint 前触发, 恢复无闪烁。
+  useLayoutEffect(() => {
+    const saved = pendingScrollRestoreRef.current;
+    if (saved !== null && listRef.current) {
+      listRef.current.scrollTop = saved;
+      pendingScrollRestoreRef.current = null;
+    }
+  }, [matters]);
 
   // 分离活跃 vs 归档
   const activeMatters = useMemo(
@@ -180,7 +202,7 @@ export default function MatterPage() {
       </div>
 
       {/* 列表 */}
-      <div className="wk-mp-page-sidebar__list">
+      <div className="wk-mp-page-sidebar__list" ref={listRef}>
         {loading && <div className="wk-mp-page-sidebar__empty">加载中...</div>}
         {!loading && activeMatters.length === 0 && (
           <div className="wk-mp-page-sidebar__empty">暂无事项</div>

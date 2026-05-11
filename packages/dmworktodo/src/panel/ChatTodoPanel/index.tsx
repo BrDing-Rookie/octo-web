@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { WKApp } from "@octo/base";
 import { useMatterList } from "../../hooks/useTodoList";
 import MatterDetailPanel from "../MatterDetailPanel";
@@ -54,8 +54,19 @@ export default function ChatMatterPanel({
   // 跟 TodoPage 用同一套事件; 会话右侧面板跟详情面板在同一个 React 子树里
   // 按理说 setMatter 后可以直接刷新, 但详情面板实际是 key 重建出来的,
   // 事件驱动更简单, 不用做 props 回传。
+  //
+  // 滚动位置锁定: reload 整替 matters → 列表 DOM 重建 → scrollTop 归 0,
+  // 用户看到的卡片跳走。reload 前存一下 scrollTop, 新数据渲染完用
+  // useLayoutEffect 在 paint 前写回, 无闪烁。
+  const listRef = useRef<HTMLDivElement>(null);
+  const pendingScrollRestoreRef = useRef<number | null>(null);
   useEffect(() => {
-    const reloader = () => reload();
+    const reloader = () => {
+      if (listRef.current) {
+        pendingScrollRestoreRef.current = listRef.current.scrollTop;
+      }
+      reload();
+    };
     WKApp.mittBus.on("wk:matter-updated", reloader);
     WKApp.mittBus.on("wk:matter-deleted", reloader);
     return () => {
@@ -63,6 +74,13 @@ export default function ChatMatterPanel({
       WKApp.mittBus.off("wk:matter-deleted", reloader);
     };
   }, [reload]);
+  useLayoutEffect(() => {
+    const saved = pendingScrollRestoreRef.current;
+    if (saved !== null && listRef.current) {
+      listRef.current.scrollTop = saved;
+      pendingScrollRestoreRef.current = null;
+    }
+  }, [matters]);
 
   const displayMatters = matters;
 
@@ -185,7 +203,7 @@ export default function ChatMatterPanel({
         ))}
       </div>
 
-      <div className="wk-mp-page-sidebar__list">
+      <div className="wk-mp-page-sidebar__list" ref={listRef}>
         {loading && <div className="wk-mp-page-sidebar__empty">加载中...</div>}
         {!loading && displayMatters.length === 0 && (
           <div className="wk-mp-page-sidebar__empty">暂无事项</div>
