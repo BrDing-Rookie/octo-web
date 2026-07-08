@@ -24,19 +24,79 @@ import type {
 // CN-tz day formatter for GlobalSearch. See §11.
 const CN_TZ = "Asia/Shanghai";
 
-export function secondsToDateOnlyCN(seconds?: number): string | undefined {
-  if (!seconds) return undefined;
+// Split a Date into CN-tz Y/M/D (numeric). Extracted so both the wire
+// serializer and the datePreset boundary math share one code path.
+function cnCalendarParts(date: Date): { y: number; m: number; d: number } | undefined {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: CN_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date(seconds * 1000));
-  const y = parts.find((p) => p.type === "year")?.value;
-  const m = parts.find((p) => p.type === "month")?.value;
-  const d = parts.find((p) => p.type === "day")?.value;
-  if (!y || !m || !d) return undefined;
-  return `${y}-${m}-${d}`;
+  }).formatToParts(date);
+  const ys = parts.find((p) => p.type === "year")?.value;
+  const ms = parts.find((p) => p.type === "month")?.value;
+  const ds = parts.find((p) => p.type === "day")?.value;
+  if (!ys || !ms || !ds) return undefined;
+  return { y: Number(ys), m: Number(ms), d: Number(ds) };
+}
+
+export function secondsToDateOnlyCN(seconds?: number): string | undefined {
+  if (!seconds) return undefined;
+  const parts = cnCalendarParts(new Date(seconds * 1000));
+  if (!parts) return undefined;
+  const mm = String(parts.m).padStart(2, "0");
+  const dd = String(parts.d).padStart(2, "0");
+  return `${parts.y}-${mm}-${dd}`;
+}
+
+// datePreset day-boundary math must run in Asia/Shanghai (§11). Doing it in
+// the browser tz lets a non-CN user's "today" straddle two CN calendar days,
+// which — after secondsToDateOnlyCN serialization — becomes
+// sent_at_from=D, sent_at_to=D+1 on the wire. We instead take the CN
+// calendar day the given instant falls on, subtract N-1 days in CN calendar
+// arithmetic (via UTC midnight of that CN date, which is safe because the
+// CN offset is a fixed +08:00), then convert back to epoch seconds anchored
+// at the CN midnight of the resulting day.
+function cnMidnightUtcMs(y: number, m: number, d: number): number {
+  // 00:00:00 in +08:00 == (day 16:00 UTC of previous calendar day).
+  return Date.UTC(y, m - 1, d) - 8 * 3600 * 1000;
+}
+
+// Start (inclusive) of CN-day containing `at`, expressed as epoch seconds.
+export function startOfCnDaySeconds(at: Date): number | undefined {
+  const parts = cnCalendarParts(at);
+  if (!parts) return undefined;
+  return Math.floor(cnMidnightUtcMs(parts.y, parts.m, parts.d) / 1000);
+}
+
+// Exclusive end (== next-day CN midnight) minus 1 second, matching the
+// existing sent_at_to inclusive-day convention.
+export function endOfCnDaySeconds(at: Date): number | undefined {
+  const parts = cnCalendarParts(at);
+  if (!parts) return undefined;
+  return Math.floor(cnMidnightUtcMs(parts.y, parts.m, parts.d + 1) / 1000) - 1;
+}
+
+// Compute [startAt, endAt] epoch seconds for a datePreset, anchored to CN.
+// `nDays`: 1 for "today", 7 for "last_7_days", 30 for "last_30_days".
+// The window ends at end-of-CN-today and starts at start-of-CN-(today-(N-1)).
+export function cnDatePresetRange(
+  nDays: number,
+  now: Date = new Date()
+): { startAt?: number; endAt?: number } {
+  const todayParts = cnCalendarParts(now);
+  if (!todayParts) return {};
+  const startMs = cnMidnightUtcMs(
+    todayParts.y,
+    todayParts.m,
+    todayParts.d - (nDays - 1)
+  );
+  const endMs =
+    cnMidnightUtcMs(todayParts.y, todayParts.m, todayParts.d + 1) - 1000;
+  return {
+    startAt: Math.floor(startMs / 1000),
+    endAt: Math.floor(endMs / 1000),
+  };
 }
 
 export function globalSearchEndpoint(tab: GlobalContentTab): string {

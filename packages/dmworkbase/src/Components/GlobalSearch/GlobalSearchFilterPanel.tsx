@@ -10,6 +10,7 @@ import type {
   GlobalSearchFileTypeCategory,
   GlobalSearchFilters,
 } from "./types";
+import { cnDatePresetRange } from "./apiAdapter";
 
 interface Props {
   tab: GlobalContentTab;
@@ -20,8 +21,11 @@ interface Props {
   onClose: () => void;
 }
 
-// Day-boundary helpers use the browser tz for the picker widget itself;
-// serialization back to the wire is CN-tz-aware in apiAdapter.ts.
+// Day-boundary helpers for the DatePicker widget (custom range only). They
+// use the browser tz so the picker matches the user's visual expectation.
+// The datePreset ("today" / "last_7_days" / "last_30_days") path uses the
+// CN-tz-aware `cnDatePresetRange` helper from apiAdapter.ts, since the
+// backend day boundaries are anchored to Asia/Shanghai (§11).
 function startOfDay(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -254,18 +258,17 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
       }));
       return;
     }
-    const now = new Date();
-    let start = startOfDay(now);
-    if (preset === "last_7_days") {
-      start = startOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
-    } else if (preset === "last_30_days") {
-      start = startOfDay(new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000));
-    }
+    // §11 tz contract: preset day boundaries are anchored to Asia/Shanghai,
+    // not the browser tz. Otherwise a non-CN user's "today" wire window can
+    // straddle two CN calendar days once secondsToDateOnlyCN serializes it.
+    const nDays =
+      preset === "last_7_days" ? 7 : preset === "last_30_days" ? 30 : 1;
+    const { startAt, endAt } = cnDatePresetRange(nDays, new Date());
     setDraft((cur) => ({
       ...cur,
       datePreset: preset,
-      startAt: toSeconds(start),
-      endAt: toSeconds(endOfDay(now)),
+      startAt,
+      endAt,
     }));
   };
 
