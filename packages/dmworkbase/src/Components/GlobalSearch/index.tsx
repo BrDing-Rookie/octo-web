@@ -38,13 +38,16 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
     contentSearchEnabled = isGlobalContentSearchEnabled();
 
     handleLocate = (item: ChannelSearchItem) => {
-        if (!canLocateChannelSearchItem(item) || !item.channelId) return;
+        // Guard: backend v10 always fills channel_id/channel_type on hits
+        // (§9); if either is missing we can't build a Channel — no-op rather
+        // than sending the user to a bogus conversation.
+        if (!canLocateChannelSearchItem(item)) return;
+        if (!item.channelId || typeof item.channelType !== "number") return;
         this.props.onClick?.(item, item.kind === "file" ? "file" : "message");
         try {
-            const channel = new Channel(
-                item.channelId,
-                typeof item.channelType === "number" ? item.channelType : 1
-            );
+            // DM `channel_id` is already reversed to the peer uid by the
+            // backend global path (backend §9.1 NEW-A) — do not re-derive.
+            const channel = new Channel(item.channelId, item.channelType);
             WKApp.endpoints.showConversation(channel, {
                 initLocateMessageSeq: item.messageSeq,
             });
