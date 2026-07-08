@@ -42,6 +42,14 @@ function selfSender(): ChannelSearchSender {
 // from the local conversation cache plus the "my groups" list — both are the
 // same data sources the backend allowlist builds from (§6.2). The server also
 // intersects with the authoritative allowlist, so a stale local cache is safe.
+//
+// v1 scope (YUJ-15): threads (channelType=5) get no dedicated picker in the
+// 「所在群聊」panel. Any thread that happens to appear in a recent
+// conversation will slip into the pool here (the conversation branch below
+// accepts ChannelTypeCommunityTopic), but we do NOT enumerate all threads of
+// the user's groups — a group-scoped thread picker is deferred. Thread hits
+// still surface via the 群聊 chip → channel_types=[2,5] fail-open path (see
+// GLOBAL_CHANNEL_TYPES_GROUP + GlobalSearchFilterPanel comment).
 async function loadReadableChannelOptions(
   keyword: string
 ): Promise<GlobalSearchChannelOption[]> {

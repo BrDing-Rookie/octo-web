@@ -87,6 +87,11 @@ export const GLOBAL_CONTENT_TYPES_KEYWORD = [1, 14, 8, 11] as const;
 export const GLOBAL_CONTENT_TYPES_BROWSE_EXTRA = [2, 5] as const;
 
 // Channel-type UI groups: 单聊 -> [1]; 群聊 (含话题) -> [2, 5]. See §6.
+// YUJ-15 update: [2,5] now produces real thread (channelType=5) hits from
+// the backend fail-open allowlist; earlier v1 stages returned nothing for
+// channel_type=5 (fail-closed). Keeping thread folded under 群聊 rather
+// than a separate 话题 chip is deliberate — see GlobalSearchFilterPanel
+// candidate-pool comment for the v1 rationale.
 export const GLOBAL_CHANNEL_TYPES_DM = [1] as const;
 export const GLOBAL_CHANNEL_TYPES_GROUP = [2, 5] as const;
 

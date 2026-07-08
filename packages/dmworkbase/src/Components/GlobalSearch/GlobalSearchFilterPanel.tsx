@@ -386,6 +386,25 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         </div>
       </div>
 
+      {/*
+        「所在群聊」narrowing (channel_ids). v1 scope, YUJ-15:
+
+        The candidate pool exposed here is populated by
+        dataSource.searchChannels — currently backed by conversation history
+        + groupSaveList, so a thread (channelType=5) does NOT get its own
+        selectable chip. This is intentional for v1: adding a per-thread
+        picker needs a thread-list source keyed by group + a UX pass on
+        thread hierarchy, both out of scope.
+
+        This does NOT silently drop thread coverage. Thread hits still
+        surface in the result stream when the caller selects the 群聊 chip
+        below — that maps to channel_types=[2,5] on the wire (§6, `GLOBAL_
+        CHANNEL_TYPES_GROUP`), which the backend fail-open expands to every
+        active thread under the caller's joined groups. In short: v1 pool =
+        groups only for narrowing, thread hits = fail-open via [2,5]. See
+        packages/dmworkbase/src/Components/GlobalSearch/dataSource.ts
+        (loadReadableChannelOptions) for the pool source.
+      */}
       <div className="wk-global-search-filter-section">
         <div className="wk-global-search-filter-title">
           {t("base.globalSearch.filter.channels") || "所在群聊"}
