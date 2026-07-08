@@ -10,6 +10,16 @@ import TabContacts from "./tab-contacts";
 import TabGroup from "./tab-group";
 import TabFile from "./tab-file";
 import { Channel } from "wukongimjssdk";
+import GlobalContentSearchPanel from "./GlobalContentSearchPanel";
+import { createGlobalSearchApiDataSource } from "./dataSource";
+import { isGlobalContentSearchEnabled } from "./feature";
+import type {
+  GlobalSearchDataSource,
+} from "./types";
+import type { ChannelSearchItem } from "../ChannelSearch/types";
+import { canLocateChannelSearchItem } from "../ChannelSearch/locate";
+import WKApp from "../../App";
+import { t as translate } from "../../i18n";
 
 interface GlobalSearchProps {
     channel?: Channel; // 查询指定频道的聊天记录
@@ -19,6 +29,29 @@ interface GlobalSearchProps {
 
 export default class GlobalSearch extends Component<GlobalSearchProps> {
     vm!: GlobalSearchVM
+
+    // Shared factory across both content-tab panels so sender/channel caches
+    // stay warm across tab switches and the `_search_file_types` fetch is
+    // performed at most once per open.
+    globalDataSource: GlobalSearchDataSource = createGlobalSearchApiDataSource();
+
+    contentSearchEnabled = isGlobalContentSearchEnabled();
+
+    handleLocate = (item: ChannelSearchItem) => {
+        if (!canLocateChannelSearchItem(item) || !item.channelId) return;
+        this.props.onClick?.(item, item.kind === "file" ? "file" : "message");
+        try {
+            const channel = new Channel(
+                item.channelId,
+                typeof item.channelType === "number" ? item.channelType : 1
+            );
+            WKApp.endpoints.showConversation(channel, {
+                initLocateMessageSeq: item.messageSeq,
+            });
+        } catch (_) {
+            // no-op: showConversation is expected to be present in the runtime.
+        }
+    }
 
 
     // 同时挂载所有 tab 组件，通过 display 切换可见性。
@@ -31,6 +64,13 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
         }
         const panelStyle = (key: string): React.CSSProperties =>
             currentKey === key ? {} : { display: "none" }
+
+        const disabledCopy = (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "#999", fontSize: "13px" }}>
+                {translate("base.globalSearch.searchDisabled") ||
+                    translate("base.globalSearch.searchFailedRetry")}
+            </div>
+        );
 
         // 在 channel 内搜索时 tabList 只返回 all / files，不会展示 contacts/groups。
         // 此时挂载 TabAll + TabFile 即可。
@@ -70,13 +110,32 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
                     onClick={onClickOf("group")}
                 />
             </div>
+            <div style={panelStyle("messages")}>
+                {this.contentSearchEnabled ? (
+                    <GlobalContentSearchPanel
+                        tab="messages"
+                        keyword={vm.keyword}
+                        dataSource={this.globalDataSource}
+                        onLocateMessage={this.handleLocate}
+                    />
+                ) : disabledCopy}
+            </div>
             <div style={panelStyle("files")}>
-                <TabFile
-                    files={vm.searchResult?.messages}
-                    keyword={vm.keyword}
-                    loadMore={() => vm.loadMore()}
-                    onClick={onClickOf("file")}
-                />
+                {this.contentSearchEnabled ? (
+                    <GlobalContentSearchPanel
+                        tab="files"
+                        keyword={vm.keyword}
+                        dataSource={this.globalDataSource}
+                        onLocateMessage={this.handleLocate}
+                    />
+                ) : (
+                    <TabFile
+                        files={vm.searchResult?.messages}
+                        keyword={vm.keyword}
+                        loadMore={() => vm.loadMore()}
+                        onClick={onClickOf("file")}
+                    />
+                )}
             </div>
         </>
     }

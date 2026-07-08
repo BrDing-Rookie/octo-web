@@ -854,6 +854,7 @@
   "createCategory.title": "New category",
   "globalSearch.chatHistoryWith": "Chat history with \"{{name}}\"",
   "globalSearch.searchFailedRetry": "Search failed. Please try again later.",
+  "globalSearch.searchDisabled": "Search is currently unavailable.",
   "globalSearch.systemMessage": "[System message]",
   "globalSearch.tab.chat": "Chat",
   "globalSearch.tab.contacts": "Contacts",
