@@ -122,6 +122,8 @@ const FilterSearchSelect: React.FC<FilterSearchSelectProps> = ({
             </button>
           ))}
           <input
+            type="text"
+            aria-label={placeholder}
             value={query}
             onChange={(event) => {
               onQueryChange(event.target.value);
