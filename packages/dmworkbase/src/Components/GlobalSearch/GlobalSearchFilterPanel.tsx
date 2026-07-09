@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { DatePicker } from "@douyinfe/semi-ui";
 import { CalendarDays, X } from "lucide-react";
 import { useI18n } from "../../i18n";
+import WKButton from "../WKButton";
 import type { ChannelSearchSender } from "../ChannelSearch/types";
 import type {
   GlobalContentTab,
@@ -86,7 +87,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
   const [draft, setDraft] = useState<GlobalSearchFilters>(filters);
   const [senderQuery, setSenderQuery] = useState("");
   const [senderOptions, setSenderOptions] = useState<ChannelSearchSender[]>(
-    () => dataSource.getSenders().filter((s) => s.uid !== dataSource.getSelfUid())
+    () =>
+      dataSource.getSenders().filter((s) => s.uid !== dataSource.getSelfUid())
   );
   const [channelQuery, setChannelQuery] = useState("");
   const [channelOptions, setChannelOptions] = useState<
@@ -188,7 +190,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
   const toggleChannel = (opt: GlobalSearchChannelOption) => {
     setDraft((cur) => {
       const has = cur.channels.some(
-        (c) => c.channelId === opt.channelId && c.channelType === opt.channelType
+        (c) =>
+          c.channelId === opt.channelId && c.channelType === opt.channelType
       );
       return {
         ...cur,
@@ -234,9 +237,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
   const toggleFileExts = (category: GlobalSearchFileTypeCategory) => {
     setDraft((cur) => {
       const set = new Set(cur.fileExts);
-      const allActive = category.exts.every((e) =>
-        set.has(e.toLowerCase())
-      );
+      const allActive = category.exts.every((e) => set.has(e.toLowerCase()));
       if (allActive) {
         category.exts.forEach((e) => set.delete(e.toLowerCase()));
       } else {
@@ -336,7 +337,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
   const channelIsSelected = useCallback(
     (opt: GlobalSearchChannelOption) =>
       draft.channels.some(
-        (c) => c.channelId === opt.channelId && c.channelType === opt.channelType
+        (c) =>
+          c.channelId === opt.channelId && c.channelType === opt.channelType
       ),
     [draft.channels]
   );
@@ -348,11 +350,11 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
 
   return (
     <div
-      className="wk-global-search-filter-panel"
+      className="wk-channel-search-filter-popover wk-global-search-filter-panel"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="wk-global-search-filter-section">
-        <div className="wk-global-search-filter-title">
+      <div className="wk-channel-search-filter-section">
+        <div className="wk-channel-search-filter-title">
           {t("base.channelSearch.filter.sender")}
         </div>
         <input
@@ -368,7 +370,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
               <button
                 key={sender.uid}
                 type="button"
-                className={`wk-global-search-filter-chip${
+                className={`wk-channel-search-filter-chip${
                   active ? " is-active" : ""
                 }`}
                 onClick={() => toggleSender(sender.uid)}
@@ -405,8 +407,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         packages/dmworkbase/src/Components/GlobalSearch/dataSource.ts
         (loadReadableChannelOptions) for the pool source.
       */}
-      <div className="wk-global-search-filter-section">
-        <div className="wk-global-search-filter-title">
+      <div className="wk-channel-search-filter-section">
+        <div className="wk-channel-search-filter-title">
           {t("base.globalSearch.filter.channels")}
         </div>
         <input
@@ -422,7 +424,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
               <button
                 key={`${opt.channelType}:${opt.channelId}`}
                 type="button"
-                className={`wk-global-search-filter-chip${
+                className={`wk-channel-search-filter-chip${
                   active ? " is-active" : ""
                 }`}
                 onClick={() => toggleChannel(opt)}
@@ -435,8 +437,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="wk-global-search-filter-section">
-        <div className="wk-global-search-filter-title">
+      <div className="wk-channel-search-filter-section">
+        <div className="wk-channel-search-filter-title">
           {t("base.globalSearch.filter.memberUid")}
         </div>
         <input
@@ -452,7 +454,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
               <button
                 key={m.uid}
                 type="button"
-                className={`wk-global-search-filter-chip${
+                className={`wk-channel-search-filter-chip${
                   active ? " is-active" : ""
                 }`}
                 onClick={() => setMemberUid(active ? undefined : m.uid)}
@@ -465,14 +467,14 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="wk-global-search-filter-section">
-        <div className="wk-global-search-filter-title">
+      <div className="wk-channel-search-filter-section">
+        <div className="wk-channel-search-filter-title">
           {t("base.globalSearch.filter.channelTypes")}
         </div>
         <div className="wk-global-search-filter-chip-row">
           <button
             type="button"
-            className={`wk-global-search-filter-chip${
+            className={`wk-channel-search-filter-chip${
               channelTypesDMActive ? " is-active" : ""
             }`}
             onClick={() => toggleChannelTypeGroup([1])}
@@ -481,7 +483,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
           </button>
           <button
             type="button"
-            className={`wk-global-search-filter-chip${
+            className={`wk-channel-search-filter-chip${
               channelTypesGroupActive ? " is-active" : ""
             }`}
             onClick={() => toggleChannelTypeGroup([2, 5])}
@@ -492,8 +494,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
       </div>
 
       {tab === "messages" && (
-        <div className="wk-global-search-filter-section">
-          <div className="wk-global-search-filter-title">
+        <div className="wk-channel-search-filter-section">
+          <div className="wk-channel-search-filter-title">
             {t("base.globalSearch.filter.contentTypes")}
           </div>
           <div className="wk-global-search-filter-chip-row">
@@ -508,7 +510,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
                   key={opt.value}
                   type="button"
                   disabled={disabled}
-                  className={`wk-global-search-filter-chip${
+                  className={`wk-channel-search-filter-chip${
                     active ? " is-active" : ""
                   }${disabled ? " is-disabled" : ""}`}
                   onClick={() => !disabled && toggleContentType(opt.value)}
@@ -523,8 +525,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
 
       {tab === "files" && (
         <>
-          <div className="wk-global-search-filter-section">
-            <div className="wk-global-search-filter-title">
+          <div className="wk-channel-search-filter-section">
+            <div className="wk-channel-search-filter-title">
               {t("base.globalSearch.filter.fileTypes")}
             </div>
             <div className="wk-global-search-filter-chip-row">
@@ -534,7 +536,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
                   <button
                     key={cat.key}
                     type="button"
-                    className={`wk-global-search-filter-chip${
+                    className={`wk-channel-search-filter-chip${
                       active ? " is-active" : ""
                     }`}
                     onClick={() => toggleFileExts(cat)}
@@ -551,8 +553,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="wk-global-search-filter-section">
-            <div className="wk-global-search-filter-title">
+          <div className="wk-channel-search-filter-section">
+            <div className="wk-channel-search-filter-title">
               {t("base.globalSearch.filter.fileSize")}
             </div>
             <div className="wk-global-search-filter-size-row">
@@ -576,8 +578,8 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         </>
       )}
 
-      <div className="wk-global-search-filter-section">
-        <div className="wk-global-search-filter-title">
+      <div className="wk-channel-search-filter-section">
+        <div className="wk-channel-search-filter-title">
           <CalendarDays
             size={14}
             style={{ verticalAlign: "middle", marginRight: 4 }}
@@ -597,7 +599,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
               <button
                 key={preset}
                 type="button"
-                className={`wk-global-search-filter-chip${
+                className={`wk-channel-search-filter-chip${
                   active ? " is-active" : ""
                 }`}
                 onClick={() =>
@@ -623,13 +625,13 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         />
       </div>
 
-      <div className="wk-global-search-filter-actions">
-        <button type="button" onClick={clearAll}>
+      <div className="wk-channel-search-filter-actions">
+        <WKButton size="sm" variant="secondary" onClick={clearAll}>
           {t("base.channelSearch.filter.clear")}
-        </button>
-        <button type="button" className="is-primary" onClick={apply}>
-          {t("base.channelSearch.filter.apply")}
-        </button>
+        </WKButton>
+        <WKButton size="sm" variant="primary" onClick={apply}>
+          {t("base.globalSearch.filter.apply")}
+        </WKButton>
       </div>
     </div>
   );

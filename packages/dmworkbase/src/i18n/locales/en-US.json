@@ -857,6 +857,7 @@
   "globalSearch.searchFailedRetry": "Search failed. Please try again later.",
   "globalSearch.searchDisabled": "Search is currently unavailable.",
   "globalSearch.filter.channels": "In conversation",
+  "globalSearch.filter.apply": "Apply",
   "globalSearch.filter.memberUid": "Includes member",
   "globalSearch.filter.channelTypes": "Chat type",
   "globalSearch.filter.channelTypeDm": "DM",
