@@ -48,7 +48,32 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
     // performed at most once per open.
     globalDataSource: GlobalSearchDataSource = createGlobalSearchApiDataSource();
 
-    contentSearchEnabled = isGlobalContentSearchEnabled();
+    // RC #554 minor (Jerry-Xin @ 2026-07-09): read the feature flag on every
+    // render instead of capturing it once as a class field — remote-config
+    // flips (`WKApp.remoteConfig.messagesSearchOn`) should take effect while
+    // the panel is mounted, without a page reload. `isGlobalContentSearchEnabled`
+    // is a pure lookup on the always-fresh `WKApp.remoteConfig` singleton;
+    // we also subscribe to `addConfigChangeListener` so a mid-session flip
+    // triggers an immediate re-render (the parent MobX vm may not re-render
+    // on remote-config alone).
+    get contentSearchEnabled(): boolean {
+        return isGlobalContentSearchEnabled();
+    }
+
+    private _removeConfigListener?: () => void;
+
+    componentDidMount() {
+        this._removeConfigListener = WKApp.remoteConfig.addConfigChangeListener(
+            () => {
+                this.forceUpdate();
+            }
+        );
+    }
+
+    componentWillUnmount() {
+        this._removeConfigListener?.();
+        this._removeConfigListener = undefined;
+    }
 
     handleLocate = (item: ChannelSearchItem) => {
         // Guard: backend v10 always fills channel_id/channel_type on hits

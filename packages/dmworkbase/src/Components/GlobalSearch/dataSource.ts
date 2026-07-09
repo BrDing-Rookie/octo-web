@@ -112,34 +112,94 @@ async function loadReadableChannelOptions(
     .slice(0, 60);
 }
 
+// RC #554 blocker (Jerry-Xin + OctoBoooot @ 2026-07-09): the previous
+// implementation called `(WKApp.dataSource as any).contactsDataSource?.search`
+// — that member does not exist on the real `DataSource` (grep is clean), so
+// the `as any` silently suppressed the type error and this function always
+// returned []. Effect: the sender/member filter never surfaced any candidate
+// unless one had already been cached from a prior search-result row.
+//
+// The real contacts surface is `commonDataSource.searchFriends(keyword)` (see
+// `Service/DataSource/DataSource.ts:201` + `ForwardModal/useForwardModal.ts:312`
+// for the canonical call site). It returns `ChannelInfo[]` where each
+// `channel.channelID` is the friend's uid and `orgData` carries `displayName`
+// / `remark` / `avatar`. When it isn't available (some deployments still
+// haven't wired it, or the network call fails) we fall back to the already-
+// synced `WKApp.dataSource.contactsList` snapshot so the filter panel is
+// never empty in a normal signed-in session.
 async function loadSenderCandidates(
   keyword: string
 ): Promise<ChannelSearchSender[]> {
-  // Try contacts / friends via a generic contacts endpoint if it exists, else
-  // fall back to whoever we've cached from search results. Keep this
-  // resilient — errors are swallowed so the filter panel stays usable.
+  const kw = keyword.trim();
+  const out: ChannelSearchSender[] = [];
+  const seen = new Set<string>();
+  const push = (sender: ChannelSearchSender) => {
+    if (!sender.uid || seen.has(sender.uid)) return;
+    seen.add(sender.uid);
+    out.push(sender);
+  };
+
+  // 1) Primary: server-side friend search (keyword-aware, up to PAGE_SIZE).
   try {
-    const searchDS = (WKApp.dataSource as any).contactsDataSource?.search;
-    if (typeof searchDS === "function") {
-      const list = await searchDS(keyword.trim(), {
-        page: 1,
-        limit: PAGE_SIZE_SENDERS,
-      });
-      if (Array.isArray(list)) {
-        return list.map((u: any) => ({
-          uid: u.uid || u.id || "",
-          name: u.remark || u.name || u.uid || u.id || "",
-          avatarUrl:
-            u.avatar ||
-            (u.uid ? WKApp.shared.avatarUser(u.uid) : undefined),
-          isCurrentMember: true,
-        }));
+    const commonDS: any = (WKApp.dataSource as any)?.commonDataSource;
+    if (commonDS && typeof commonDS.searchFriends === "function") {
+      const friends = (await commonDS.searchFriends(kw)) ?? [];
+      if (Array.isArray(friends)) {
+        for (const info of friends) {
+          const uid = info?.channel?.channelID;
+          if (!uid) continue;
+          const org = info?.orgData ?? {};
+          push({
+            uid,
+            name:
+              org.remark ||
+              org.displayName ||
+              org.name ||
+              uid,
+            avatarUrl:
+              org.avatar ||
+              WKApp.shared.avatarUser(uid),
+            isCurrentMember: true,
+          });
+          if (out.length >= PAGE_SIZE_SENDERS) return out;
+        }
       }
     }
   } catch (_) {
-    // fall through
+    // fall through to the local contacts snapshot
   }
-  return [];
+
+  // 2) Fallback: the already-synced local contacts list. `contactsSync`
+  //    populates this on login (see DataSource.contactsSync), so a signed-in
+  //    user always has *some* candidates even when the friend-search endpoint
+  //    is missing / offline. Do local case-insensitive filtering on
+  //    name/remark/uid so an empty-keyword call still returns everyone.
+  try {
+    const list: any[] = (WKApp.dataSource as any)?.contactsList ?? [];
+    const kwLower = kw.toLowerCase();
+    for (const c of list) {
+      const uid = c?.uid;
+      if (!uid) continue;
+      const name = c?.remark || c?.name || uid;
+      if (
+        kwLower &&
+        !`${name}${uid}`.toLowerCase().includes(kwLower)
+      ) {
+        continue;
+      }
+      push({
+        uid,
+        name,
+        avatarUrl: c?.avatar || WKApp.shared.avatarUser(uid),
+        isCurrentMember: true,
+      });
+      if (out.length >= PAGE_SIZE_SENDERS) return out;
+    }
+  } catch (_) {
+    // ignore — worst case we return whatever we already gathered
+  }
+
+  return out;
 }
 
 export interface CreateGlobalSearchApiDataSourceOptions {
