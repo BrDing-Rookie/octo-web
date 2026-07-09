@@ -1,8 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { DatePicker } from "@douyinfe/semi-ui";
-import { CalendarDays, X } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { useI18n } from "../../i18n";
 import WKButton from "../WKButton";
+import FilterSearchSelect from "./FilterSearchSelect";
+import type { FilterSearchOption } from "./FilterSearchSelect";
 import type { ChannelSearchSender } from "../ChannelSearch/types";
 import type {
   GlobalContentTab,
@@ -94,6 +102,12 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
   const [channelOptions, setChannelOptions] = useState<
     GlobalSearchChannelOption[]
   >([]);
+  // Keeps every channel option we've ever loaded so a picked chip can resolve
+  // its display name even after the query narrows past it (draft.channels only
+  // stores {channelId, channelType}).
+  const channelCatalog = useRef<Map<string, GlobalSearchChannelOption>>(
+    new Map()
+  );
   const [memberQuery, setMemberQuery] = useState("");
   const [memberOptions, setMemberOptions] = useState<ChannelSearchSender[]>([]);
   const [fileCategories, setFileCategories] = useState<
@@ -133,6 +147,9 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
       try {
         const list = (await dataSource.searchChannels?.(channelQuery)) ?? [];
         if (cancelled) return;
+        list.forEach((o) =>
+          channelCatalog.current.set(`${o.channelType}:${o.channelId}`, o)
+        );
         setChannelOptions(list);
       } catch (_) {
         if (!cancelled) setChannelOptions([]);
@@ -209,6 +226,27 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
             ],
       };
     });
+  };
+
+  // Composite key used by the FilterSearchSelect option ids (channelId can be
+  // shared across channel types, so both parts are needed to be unique).
+  const channelKey = (ref: { channelId: string; channelType: number }) =>
+    `${ref.channelType}:${ref.channelId}`;
+
+  const toggleChannelById = (id: string) => {
+    const known =
+      channelCatalog.current.get(id) ??
+      channelOptions.find((o) => channelKey(o) === id);
+    if (known) {
+      toggleChannel(known);
+      return;
+    }
+    // Chip whose option is no longer in the loaded pool (removal only needs
+    // channelId + channelType). Split on the first ":" — channelType is numeric.
+    const sep = id.indexOf(":");
+    const channelType = Number(id.slice(0, sep));
+    const channelId = id.slice(sep + 1);
+    toggleChannel({ channelId, channelType, name: channelId });
   };
 
   const toggleChannelTypeGroup = (values: number[]) => {
@@ -334,59 +372,98 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
     (uid: string) => draft.senderUids.includes(uid),
     [draft.senderUids]
   );
-  const channelIsSelected = useCallback(
-    (opt: GlobalSearchChannelOption) =>
-      draft.channels.some(
-        (c) =>
-          c.channelId === opt.channelId && c.channelType === opt.channelType
-      ),
-    [draft.channels]
-  );
   const fileCategoryIsActive = useCallback(
     (cat: GlobalSearchFileTypeCategory) =>
       cat.exts.every((e) => draft.fileExts.includes(e.toLowerCase())),
     [draft.fileExts]
   );
 
+  // Options + picked chips for the three select-style filters. Each maps the
+  // filter's native shape onto the generic { id, name, avatarUrl } row that
+  // FilterSearchSelect renders.
+  const senderSelectOptions = useMemo<FilterSearchOption[]>(
+    () =>
+      senderOptions.map((s) => ({
+        id: s.uid,
+        name: s.name,
+        avatarUrl: s.avatarUrl,
+      })),
+    [senderOptions]
+  );
+  const senderSelected = useMemo<FilterSearchOption[]>(
+    () =>
+      draft.senderUids.map((uid) => {
+        const s = dataSource.getSender(uid);
+        return { id: uid, name: s.name, avatarUrl: s.avatarUrl };
+      }),
+    [draft.senderUids, dataSource]
+  );
+
+  const channelSelectOptions = useMemo<FilterSearchOption[]>(
+    () =>
+      channelOptions.map((o) => ({
+        id: channelKey(o),
+        name: o.name,
+        avatarUrl: o.avatarUrl,
+      })),
+    [channelOptions]
+  );
+  const channelSelected = useMemo<FilterSearchOption[]>(
+    () =>
+      draft.channels.map((c) => {
+        const key = channelKey(c);
+        const known = channelCatalog.current.get(key);
+        return {
+          id: key,
+          name: known?.name ?? c.channelId,
+          avatarUrl: known?.avatarUrl,
+        };
+      }),
+    [draft.channels]
+  );
+  const channelIsSelectedById = useCallback(
+    (id: string) => draft.channels.some((c) => channelKey(c) === id),
+    [draft.channels]
+  );
+
+  const memberSelectOptions = useMemo<FilterSearchOption[]>(
+    () =>
+      memberOptions.map((m) => ({
+        id: m.uid,
+        name: m.name,
+        avatarUrl: m.avatarUrl,
+      })),
+    [memberOptions]
+  );
+  const memberSelected = useMemo<FilterSearchOption[]>(() => {
+    if (!draft.memberUid) return [];
+    const s = dataSource.getSender(draft.memberUid);
+    return [{ id: draft.memberUid, name: s.name, avatarUrl: s.avatarUrl }];
+  }, [draft.memberUid, dataSource]);
+  const memberIsSelected = useCallback(
+    (id: string) => draft.memberUid === id,
+    [draft.memberUid]
+  );
+  const toggleMemberById = (id: string) =>
+    setMemberUid(draft.memberUid === id ? undefined : id);
+
   return (
     <div
       className="wk-channel-search-filter-popover wk-global-search-filter-panel"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="wk-channel-search-filter-section">
-        <div className="wk-channel-search-filter-title">
-          {t("base.channelSearch.filter.sender")}
-        </div>
-        <input
-          className="wk-global-search-filter-search"
-          value={senderQuery}
-          onChange={(e) => setSenderQuery(e.target.value)}
-          placeholder={t("base.channelSearch.filter.senderPlaceholder")}
-        />
-        <div className="wk-global-search-filter-chip-row">
-          {senderOptions.slice(0, 30).map((sender) => {
-            const active = senderIsSelected(sender.uid);
-            return (
-              <button
-                key={sender.uid}
-                type="button"
-                className={`wk-channel-search-filter-chip${
-                  active ? " is-active" : ""
-                }`}
-                onClick={() => toggleSender(sender.uid)}
-              >
-                {sender.name}
-                {active && <X size={12} />}
-              </button>
-            );
-          })}
-          {senderOptions.length === 0 && (
-            <span className="wk-global-search-filter-help">
-              {t("base.channelSearch.filter.senderPlaceholder")}
-            </span>
-          )}
-        </div>
-      </div>
+      <FilterSearchSelect
+        title={t("base.channelSearch.filter.sender")}
+        placeholder={t("base.channelSearch.filter.senderPlaceholder")}
+        query={senderQuery}
+        onQueryChange={setSenderQuery}
+        options={senderSelectOptions}
+        selected={senderSelected}
+        isSelected={senderIsSelected}
+        onToggle={toggleSender}
+        emptyHint={t("base.channelSearch.filter.senderPlaceholder")}
+        listboxId="wk-global-search-sender-list"
+      />
 
       {/*
         「所在群聊」narrowing (channel_ids). v1 scope, YUJ-15:
@@ -407,65 +484,27 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         packages/dmworkbase/src/Components/GlobalSearch/dataSource.ts
         (loadReadableChannelOptions) for the pool source.
       */}
-      <div className="wk-channel-search-filter-section">
-        <div className="wk-channel-search-filter-title">
-          {t("base.globalSearch.filter.channels")}
-        </div>
-        <input
-          className="wk-global-search-filter-search"
-          value={channelQuery}
-          onChange={(e) => setChannelQuery(e.target.value)}
-          placeholder=""
-        />
-        <div className="wk-global-search-filter-chip-row">
-          {channelOptions.slice(0, 30).map((opt) => {
-            const active = channelIsSelected(opt);
-            return (
-              <button
-                key={`${opt.channelType}:${opt.channelId}`}
-                type="button"
-                className={`wk-channel-search-filter-chip${
-                  active ? " is-active" : ""
-                }`}
-                onClick={() => toggleChannel(opt)}
-              >
-                {opt.name}
-                {active && <X size={12} />}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <FilterSearchSelect
+        title={t("base.globalSearch.filter.channels")}
+        query={channelQuery}
+        onQueryChange={setChannelQuery}
+        options={channelSelectOptions}
+        selected={channelSelected}
+        isSelected={channelIsSelectedById}
+        onToggle={toggleChannelById}
+        listboxId="wk-global-search-channel-list"
+      />
 
-      <div className="wk-channel-search-filter-section">
-        <div className="wk-channel-search-filter-title">
-          {t("base.globalSearch.filter.memberUid")}
-        </div>
-        <input
-          className="wk-global-search-filter-search"
-          value={memberQuery}
-          onChange={(e) => setMemberQuery(e.target.value)}
-          placeholder=""
-        />
-        <div className="wk-global-search-filter-chip-row">
-          {memberOptions.slice(0, 30).map((m) => {
-            const active = draft.memberUid === m.uid;
-            return (
-              <button
-                key={m.uid}
-                type="button"
-                className={`wk-channel-search-filter-chip${
-                  active ? " is-active" : ""
-                }`}
-                onClick={() => setMemberUid(active ? undefined : m.uid)}
-              >
-                {m.name}
-                {active && <X size={12} />}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <FilterSearchSelect
+        title={t("base.globalSearch.filter.memberUid")}
+        query={memberQuery}
+        onQueryChange={setMemberQuery}
+        options={memberSelectOptions}
+        selected={memberSelected}
+        isSelected={memberIsSelected}
+        onToggle={toggleMemberById}
+        listboxId="wk-global-search-member-list"
+      />
 
       <div className="wk-channel-search-filter-section">
         <div className="wk-channel-search-filter-title">
