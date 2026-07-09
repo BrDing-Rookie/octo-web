@@ -44,6 +44,14 @@ interface GlobalContentSearchPanelProps {
   onLocateMessage: (item: ChannelSearchItem) => void;
   initialState?: GlobalSearchPanelState;
   onStateChange?: (state: GlobalSearchPanelState) => void;
+  // Content panels for messages/files are all mounted at once and toggled via
+  // `display:none` (avoids remounting <img>/VisibilityTrigger on tab switch).
+  // A hidden container reports scrollHeight/scrollTop/clientHeight = 0, which
+  // `isNearChannelSearchScrollBottom` reads as "at the bottom" and triggers
+  // pagination in the background — for the files tab this walks the entire
+  // corpus even when the user is on the messages tab. Gate both the initial
+  // debounced fetch and scroll-driven pagination on isActive.
+  isActive?: boolean;
 }
 
 const GlobalContentSearchPanel: React.FC<GlobalContentSearchPanelProps> = ({
@@ -53,6 +61,7 @@ const GlobalContentSearchPanel: React.FC<GlobalContentSearchPanelProps> = ({
   onLocateMessage,
   initialState,
   onStateChange,
+  isActive = true,
 }) => {
   const { t } = useI18n();
   const [filters, setFilters] = useState<GlobalSearchFilters>(
@@ -76,7 +85,7 @@ const GlobalContentSearchPanel: React.FC<GlobalContentSearchPanelProps> = ({
   const contentRef = useRef<HTMLDivElement>(null);
   const filterWrapRef = useRef<HTMLDivElement>(null);
 
-  const canSearch = shouldRunGlobalSearch(tab, keyword, filters);
+  const canSearch = shouldRunGlobalSearch(tab, keyword, filters) && isActive;
   const filterCount = activeGlobalSearchFilterCount(filters);
   const getSender = useCallback(
     (uid: string) => dataSource.getSender(uid),
@@ -90,6 +99,7 @@ const GlobalContentSearchPanel: React.FC<GlobalContentSearchPanelProps> = ({
   const runSearch = useCallback(
     async (cursor?: string) => {
       if (cursor && loadingMoreCursorRef.current === cursor) return;
+      if (!isActive) return;
       if (!shouldRunGlobalSearch(tab, keyword, filters)) return;
 
       loadingMoreCursorRef.current = cursor || null;
@@ -148,11 +158,12 @@ const GlobalContentSearchPanel: React.FC<GlobalContentSearchPanelProps> = ({
         }
       }
     },
-    [tab, keyword, filters, dataSource, t]
+    [tab, keyword, filters, dataSource, t, isActive]
   );
 
   const loadNextPage = useCallback(
     (force = false) => {
+      if (!isActive) return;
       if (loading || loadingMore || !response.hasMore || !response.nextCursor) {
         return;
       }
@@ -161,6 +172,7 @@ const GlobalContentSearchPanel: React.FC<GlobalContentSearchPanelProps> = ({
     },
     [
       autoPaginationPaused,
+      isActive,
       loading,
       loadingMore,
       paginationError,

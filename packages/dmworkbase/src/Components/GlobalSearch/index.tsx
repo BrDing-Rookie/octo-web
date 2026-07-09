@@ -24,7 +24,19 @@ import { t as translate } from "../../i18n";
 interface GlobalSearchProps {
     channel?: Channel; // 查询指定频道的聊天记录
     // item点击事件，传递item和type，type为contacts、group、message,file
+    // NOTE: content-tab hits (messages / files via GlobalContentSearchPanel)
+    // do NOT go through onClick — their items are camelCase ChannelSearchItem
+    // shape and the legacy `handleGlobalSearchClick` consumer reads snake_case
+    // (`item.channel.channel_id` / `item.payload.url`), which crashes. Content
+    // tabs navigate via `handleLocate` (uses WKApp.endpoints.showConversation
+    // directly) and close the modal via `hideModal`. onClick still services
+    // the legacy contacts / group / TabAll / TabFile paths whose items keep
+    // the snake_case shape.
     onClick?: (item: any, type: string) => void;
+    // Called by handleLocate after content-tab navigation so the enclosing
+    // modal can dismiss. Kept separate from onClick to avoid pushing a
+    // camelCase item into the snake-case consumer.
+    hideModal?: () => void;
 }
 
 export default class GlobalSearch extends Component<GlobalSearchProps> {
@@ -43,7 +55,10 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
         // than sending the user to a bogus conversation.
         if (!canLocateChannelSearchItem(item)) return;
         if (!item.channelId || typeof item.channelType !== "number") return;
-        this.props.onClick?.(item, item.kind === "file" ? "file" : "message");
+        // Do NOT forward `item` to `props.onClick` — content-tab items are
+        // camelCase ChannelSearchItems and the legacy consumer expects
+        // snake-case shapes (`item.channel.channel_id`, `item.payload.url`).
+        // Navigate here, then let the parent close its modal via hideModal.
         try {
             // DM `channel_id` is already reversed to the peer uid by the
             // backend global path (backend §9.1 NEW-A) — do not re-derive.
@@ -58,6 +73,7 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
             // eslint-disable-next-line no-console
             console.warn("[GlobalSearch] showConversation failed", err);
         }
+        this.props.hideModal?.();
     }
 
 
@@ -124,6 +140,7 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
                         keyword={vm.keyword}
                         dataSource={this.globalDataSource}
                         onLocateMessage={this.handleLocate}
+                        isActive={currentKey === "messages"}
                     />
                 ) : disabledCopy}
             </div>
@@ -134,6 +151,7 @@ export default class GlobalSearch extends Component<GlobalSearchProps> {
                         keyword={vm.keyword}
                         dataSource={this.globalDataSource}
                         onLocateMessage={this.handleLocate}
+                        isActive={currentKey === "files"}
                     />
                 ) : (
                     <TabFile

@@ -407,7 +407,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
       */}
       <div className="wk-global-search-filter-section">
         <div className="wk-global-search-filter-title">
-          {t("base.globalSearch.filter.channels") || "所在群聊"}
+          {t("base.globalSearch.filter.channels")}
         </div>
         <input
           className="wk-global-search-filter-search"
@@ -437,7 +437,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
 
       <div className="wk-global-search-filter-section">
         <div className="wk-global-search-filter-title">
-          {t("base.globalSearch.filter.memberUid") || "包含成员"}
+          {t("base.globalSearch.filter.memberUid")}
         </div>
         <input
           className="wk-global-search-filter-search"
@@ -467,7 +467,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
 
       <div className="wk-global-search-filter-section">
         <div className="wk-global-search-filter-title">
-          {t("base.globalSearch.filter.channelTypes") || "聊天类型"}
+          {t("base.globalSearch.filter.channelTypes")}
         </div>
         <div className="wk-global-search-filter-chip-row">
           <button
@@ -477,7 +477,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
             }`}
             onClick={() => toggleChannelTypeGroup([1])}
           >
-            {t("base.globalSearch.filter.channelTypeDm") || "单聊"}
+            {t("base.globalSearch.filter.channelTypeDm")}
           </button>
           <button
             type="button"
@@ -486,7 +486,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
             }`}
             onClick={() => toggleChannelTypeGroup([2, 5])}
           >
-            {t("base.globalSearch.filter.channelTypeGroup") || "群聊"}
+            {t("base.globalSearch.filter.channelTypeGroup")}
           </button>
         </div>
       </div>
@@ -494,7 +494,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
       {tab === "messages" && (
         <div className="wk-global-search-filter-section">
           <div className="wk-global-search-filter-title">
-            {t("base.globalSearch.filter.contentTypes") || "消息类型"}
+            {t("base.globalSearch.filter.contentTypes")}
           </div>
           <div className="wk-global-search-filter-chip-row">
             {MESSAGE_TYPE_OPTIONS.map((opt) => {
@@ -525,7 +525,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
         <>
           <div className="wk-global-search-filter-section">
             <div className="wk-global-search-filter-title">
-              {t("base.globalSearch.filter.fileTypes") || "文件类型"}
+              {t("base.globalSearch.filter.fileTypes")}
             </div>
             <div className="wk-global-search-filter-chip-row">
               {fileCategories.map((cat) => {
@@ -553,7 +553,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
 
           <div className="wk-global-search-filter-section">
             <div className="wk-global-search-filter-title">
-              {t("base.globalSearch.filter.fileSize") || "文件大小 (KB)"}
+              {t("base.globalSearch.filter.fileSize")}
             </div>
             <div className="wk-global-search-filter-size-row">
               <input
@@ -561,7 +561,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
                 min={0}
                 value={fileSizeMinInput}
                 onChange={(e) => setFileSizeMinInput(e.target.value)}
-                placeholder={t("base.globalSearch.filter.fileSizeMin") || "最小"}
+                placeholder={t("base.globalSearch.filter.fileSizeMin")}
               />
               <span>-</span>
               <input
@@ -569,7 +569,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
                 min={0}
                 value={fileSizeMaxInput}
                 onChange={(e) => setFileSizeMaxInput(e.target.value)}
-                placeholder={t("base.globalSearch.filter.fileSizeMax") || "最大"}
+                placeholder={t("base.globalSearch.filter.fileSizeMax")}
               />
             </div>
           </div>
@@ -628,7 +628,7 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
           {t("base.channelSearch.filter.clear")}
         </button>
         <button type="button" className="is-primary" onClick={apply}>
-          {t("base.channelSearch.filter.apply") || "确定"}
+          {t("base.channelSearch.filter.apply")}
         </button>
       </div>
     </div>
