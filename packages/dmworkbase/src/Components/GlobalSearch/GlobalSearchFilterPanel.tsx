@@ -542,22 +542,23 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
       />
 
       {/*
-        「所在群聊」narrowing (channel_ids). v1 scope, YUJ-15:
+        「所在群聊或子区」narrowing (channel_ids). YUJ-30 bug 2 + YUJ-15:
 
         The candidate pool exposed here is populated by
         dataSource.searchChannels — currently backed by conversation history
-        + groupSaveList, so a thread (channelType=5) does NOT get its own
-        selectable chip. This is intentional for v1: adding a per-thread
-        picker needs a thread-list source keyed by group + a UX pass on
-        thread hierarchy, both out of scope.
+        + groupSaveList, filtered to groups (channelType=2) + threads (5).
+        Private conversations (channelType=1, DM) are excluded from the pool
+        as of YUJ-30 bug 2: the picker is scoped to groups and threads only
+        (label: 「所在群聊或子区」).
 
-        This does NOT silently drop thread coverage. Thread hits still
-        surface in the result stream when the caller selects the 群聊 chip
-        below — that maps to channel_types=[2,5] on the wire (§6, `GLOBAL_
-        CHANNEL_TYPES_GROUP`), which the backend fail-open expands to every
-        active thread under the caller's joined groups. In short: v1 pool =
-        groups only for narrowing, thread hits = fail-open via [2,5]. See
-        packages/dmworkbase/src/Components/GlobalSearch/dataSource.ts
+        v1 (YUJ-15) — full group-scoped thread picker is deferred. Threads
+        that already show up in a recent conversation get their own row here;
+        others don't. Under the YUJ-30 unified rule, picking a *group* now
+        expands server-side to «group + all its threads» (backend
+        resolveGlobalScope + expandGroupWithThreads), so thread hits are no
+        longer contingent on the fail-open [2,5] channel_types path.
+
+        See packages/dmworkbase/src/Components/GlobalSearch/dataSource.ts
         (loadReadableChannelOptions) for the pool source.
       */}
       <FilterSearchSelect
