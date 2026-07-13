@@ -283,7 +283,16 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
             )
           : [
               ...cur.channels,
-              { channelId: opt.channelId, channelType: opt.channelType },
+              {
+                channelId: opt.channelId,
+                channelType: opt.channelType,
+                // Persist display fields so the chip keeps showing the channel
+                // name after the panel is closed and reopened (bug 1). The
+                // channelCatalog ref is per-panel-instance and rebuilds
+                // empty on remount, so the ref itself has to carry the name.
+                name: opt.name,
+                avatarUrl: opt.avatarUrl,
+              },
             ],
       };
     });
@@ -474,10 +483,13 @@ const GlobalSearchFilterPanel: React.FC<Props> = ({
       draft.channels.map((c) => {
         const key = channelKey(c);
         const known = channelCatalog.current.get(key);
+        // Prefer the persisted ref name (bug 1: survives panel reopen). Fall
+        // back to the freshly-loaded catalog entry, then to the raw channelId
+        // as a last resort for refs that predate the name-persistence change.
         return {
           id: key,
-          name: known?.name ?? c.channelId,
-          avatarUrl: known?.avatarUrl,
+          name: c.name ?? known?.name ?? c.channelId,
+          avatarUrl: c.avatarUrl ?? known?.avatarUrl,
         };
       }),
     [draft.channels]

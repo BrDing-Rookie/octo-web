@@ -9,6 +9,14 @@ export type GlobalContentTab = "messages" | "files";
 export interface GlobalSearchChannelRef {
   channelId: string;
   channelType: number;
+  // Persisted alongside the ref so a picked chip renders the channel's display
+  // name on reopen, even after the filter panel has been unmounted and the
+  // in-memory catalog rebuilt. Without this, `channelCatalog` starts empty on
+  // reopen and the fallback code shows the raw channelId until a candidate
+  // fetch happens to re-hydrate the same entry. Mirrors how ChannelSearch
+  // resolves sender chips from the dataSource-level senderCache.
+  name?: string;
+  avatarUrl?: string;
 }
 
 export interface GlobalSearchFilters {
