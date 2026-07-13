@@ -189,18 +189,19 @@ export function hasEffectiveGlobalFilters(filters: GlobalSearchFilters) {
   );
 }
 
-// Messages tab needs keyword or a real filter (backend rejects fully-empty
-// searches). Files tab supports empty-keyword browse. Do NOT reuse
-// ChannelSearch's shouldRunSearch: it inspects `tab !== "all" && tab !==
-// "message"` and our tab name is "messages" (plural) → it would let empty
-// searches through and get a 400.
+// Both tabs now fire even without a keyword / filter (bug 3, YUJ-30). The
+// backend `_search_global_messages` accepts empty keyword — aligning with the
+// per-channel `_search_all` browse behavior — and the batched-allowlist path
+// (§6.2) keeps browse-mode cost bounded (ms-level per user's allowlist). Do
+// NOT reuse ChannelSearch's shouldRunSearch: it inspects `tab !== "all" &&
+// tab !== "message"` and our tab name is "messages" (plural), so it would
+// short-circuit the wrong branch.
 export function shouldRunGlobalSearch(
-  tab: GlobalContentTab,
-  keyword: string,
-  filters: GlobalSearchFilters
+  _tab: GlobalContentTab,
+  _keyword: string,
+  _filters: GlobalSearchFilters
 ) {
-  if (tab === "files") return true;
-  return keyword.trim().length > 0 || hasEffectiveGlobalFilters(filters);
+  return true;
 }
 
 export function toGlobalRequestBody(

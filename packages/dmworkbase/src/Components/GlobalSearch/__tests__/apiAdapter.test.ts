@@ -379,17 +379,15 @@ describe("shouldRunGlobalSearch", () => {
     expect(shouldRunGlobalSearch("files", "kw", baseFilters())).toBe(true);
   });
 
-  it("messages tab needs keyword OR a real filter", () => {
-    // Empty keyword + no filters → do not fire (backend rejects).
-    expect(shouldRunGlobalSearch("messages", "", baseFilters())).toBe(false);
-    expect(shouldRunGlobalSearch("messages", "   ", baseFilters())).toBe(false);
-
-    // Keyword alone.
+  it("messages tab always runs after YUJ-30 bug 3 (empty keyword browse allowed)", () => {
+    // Bug 3: backend `_search_global_messages` now accepts empty keyword,
+    // aligning with per-channel `_search_all` browse behavior — the FE
+    // gate must not swallow the request anymore.
+    expect(shouldRunGlobalSearch("messages", "", baseFilters())).toBe(true);
+    expect(shouldRunGlobalSearch("messages", "   ", baseFilters())).toBe(true);
     expect(shouldRunGlobalSearch("messages", "hello", baseFilters())).toBe(
       true
     );
-
-    // Filter alone (no keyword).
     expect(
       shouldRunGlobalSearch(
         "messages",
