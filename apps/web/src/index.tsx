@@ -57,6 +57,13 @@ WKApp.apiClient.config.tokenCallback = ()=> {
 }
 // 埋点上报通道带业务 token(后端据此鉴权并归一 actor)。回调注入避免 Dap import WKApp。
 Dap.shared.setTokenProvider(() => WKApp.loginInfo.token)
+// 上下文 provider:每次上报前调用,返回当前会话级属性(典型如 channel_id/channel_type)。
+// WKApp.shared.openChannel 在 Conversation 打开时设置、关闭时清空;非会话页返回空对象,无副作用。
+Dap.shared.setContextProvider(() => {
+    const ch = WKApp.shared.openChannel
+    if (!ch) return {}
+    return { channel_id: ch.channelID, channel_type: ch.channelType }
+})
 // 由 APIClient request interceptor 读取当前 space_id，注入 X-Space-Id header。
 // 通过回调注入（而非在 APIClient 内 import WKApp）以避免循环依赖。GH #1038
 WKApp.apiClient.config.spaceIdCallback = () => {

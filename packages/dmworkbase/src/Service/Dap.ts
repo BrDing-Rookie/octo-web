@@ -287,6 +287,12 @@ class DapImpl {
     private retryTimers = new Set<ReturnType<typeof setTimeout>>()
     /** 业务 token 取值回调(index.tsx 注入,避免 import WKApp 造成循环依赖)。上报带 token 头供后端鉴权。 */
     private tokenProvider: (() => string | undefined) | null = null
+    /**
+     * 上下文 provider(index.tsx 注入):每次上报前调用,返回当前会话级属性(典型如 channel_id/channel_type)。
+     * 注入点在 envelope() 合并 props 之前:ctx 先铺底,显式 props 覆盖 ctx,保证调用处手动传的同名键不被吞掉。
+     * 回调抛错 / 返回 undefined 一律视为空对象,绝不波及上报链路(与 tokenProvider 同 fail-closed 语义)。
+     */
+    private contextProvider: (() => Record<string, TrackPrimitive>) | null = null
     private queue: TrackEnvelope[] = []
     private flushTimer: ReturnType<typeof setInterval> | null = null
     private lastPage: { pageId: string; enteredAt: number; settled: boolean } | null = null
@@ -397,6 +403,20 @@ class DapImpl {
         this.tokenProvider = fn
     }
 
+    /** 注入上下文 provider(见 index.tsx):每次上报前调用,返回当前会话级属性(如 channel_id/channel_type)。 */
+    setContextProvider(fn: () => Record<string, TrackPrimitive>): void {
+        this.contextProvider = fn
+    }
+
+    /** 取当前上下文;抛错 / 未注入都返回空对象(不阻断上报)。 */
+    private currentContext(): Record<string, TrackPrimitive> {
+        try {
+            return this.contextProvider ? this.contextProvider() : {}
+        } catch {
+            return {}
+        }
+    }
+
     /** 取当前业务 token;取不到 / 抛错都返回 undefined(不阻断上报)。 */
     private currentToken(): string | undefined {
         try {
@@ -499,7 +519,19 @@ class DapImpl {
         }
         if (this.lastPage) env.page_id = this.lastPage.pageId
         if (objectId) env.object_id = objectId
-        if (props && Object.keys(props).length > 0) env.props = props
+        // 上下文注入(ctx 铺底,显式 props 覆盖 ctx):channel_id/channel_type 等会话级属性
+        // 由 app 侧注入的 contextProvider 提供;调用处手动传的同名键优先级更高,不被吞掉。
+        // 注:track()/pageView() 在调 envelope 前已 sanitizeProps,ctx 也只接受 TrackPrimitive,
+        // 故此处合并结果无需再过一遍黑名单——但 ctx 自身不应带正文(由注入方保证)。
+        const ctx = this.currentContext()
+        const ctxKeys = Object.keys(ctx)
+        const propsKeys = props ? Object.keys(props) : []
+        if (ctxKeys.length > 0 || propsKeys.length > 0) {
+            const merged: Record<string, TrackPrimitive> = {}
+            for (const k of ctxKeys) merged[k] = ctx[k]
+            if (props) for (const k of propsKeys) merged[k] = props![k]
+            env.props = merged
+        }
         return env
     }
 
