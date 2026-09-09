@@ -266,6 +266,12 @@ export const FETCH_RULES: FetchRule[] = [
     //   同款,见 VoiceSettingsPanel)。POST/PUT manager/secrets(真实写=配置)仍保留在下方。
     { method: 'POST', path: '/api/v1/manager/secrets', event: 'settings_secrets_configured' },
     { method: 'PUT', path: '/api/v1/manager/secrets/:id', event: 'settings_secrets_configured' },
+    // DAP-110 Stage 2:删除密钥 = DELETE /manager/secrets/:id 成功。删除是「动作已发生且成功」
+    //   两问皆 yes 的干净 path 语义(无信封、无 2xx≠业务成功问题),与上面 configured 的 POST/PUT
+    //   写侧对称,故走本通道而非命令式。事件名 settings_secrets_deleted 已在 octo-dap 采集器注册
+    //   (frontend_tracker / submitted)。列表加载 GET /manager/secrets 已在上面判为 settings_secrets_opened
+    //   的命令式挂载点(非本通道),删除后回读刷新不会误命中本规则(方法不同)。
+    { method: 'DELETE', path: '/api/v1/manager/secrets/:id', event: 'settings_secrets_deleted' },
     { method: 'POST', path: '/v1/auth/oidc/:seg/logout', event: 'user_logout' },
     // ---- fleet(Loop:task/project/automation/expert/squad/workspace/skill,@dmwork/loop 同窗内嵌)
     //   T1 复核(2026-08-18):loop 模块 source-direct 编译进同一 octo-web bundle,axios baseURL

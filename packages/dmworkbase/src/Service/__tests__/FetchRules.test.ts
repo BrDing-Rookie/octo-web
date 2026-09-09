@@ -363,6 +363,14 @@ describe('FETCH_RULES — 十二审 🔴 五类「2xx ≠ 用户动作(且成功
         // 群成员昵称编辑(与 conversation_cleared 注释相邻)不受影响。
         expect(matchFetchEvent(idx, 'PUT', '/api/v1/groups/g1/members/u1')).toBe('group_nickname_edited')
     })
+
+    // DAP-110 Stage 2:删除密钥走 path 通道。
+    it('DELETE /manager/secrets/:id → settings_secrets_deleted(删除是干净的 2xx=动作成功 path 语义)', () => {
+        expect(matchFetchEvent(idx, 'DELETE', '/api/v1/manager/secrets/s1')).toBe('settings_secrets_deleted')
+        // 与同前缀的配置/列表口径互不串味:DELETE 独占删除事件,POST/PUT 仍是 configured,GET 不命中(命令式打开)。
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/manager/secrets')).toBe('settings_secrets_configured')
+        expect(matchFetchEvent(idx, 'GET', '/api/v1/manager/secrets')).toBeUndefined()
+    })
 })
 
 describe('FETCH_RULES — fleet(Loop)path 通道(T1 同窗内嵌,/fleet/api/v1/*)', () => {
