@@ -199,6 +199,10 @@ describe('FETCH_RULES — 「请求成功 ≠ 用户动作」的语义边界(负
             'expert_opened',                       // dmloop AgentPage.openDetail
             'expert_team_opened',                  // dmloop SquadPage.openDetail
             'skill_opened',                        // dmloop SkillPage.openDetail
+            // ↓ Octo-Q head 258e876e P1:document_module_entered 从 fetch 通道移出 —— Class N 导航事件,
+            //   原挂 GET /docs/recent/creators(被 122 ?creator= 筛选共用会无界放大)。改由 host 导航手势
+            //   命令式发射(apps/web Main/index.tsx + tab_low_screen.tsx,menus.id==='docs' 非 reentry),永不得回 fetch。
+            'document_module_entered',
         ])
         const leaked = FETCH_RULES.filter((r) => uiOnly.has(r.event)).map((r) => `${r.method} ${r.path} → ${r.event}`)
         expect(leaked, leaked.join('\n')).toEqual([])
@@ -422,7 +426,9 @@ describe('FETCH_RULES — fleet(Loop)path 通道(T1 同窗内嵌,/fleet/api/v1/*
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/workspaces/w1/octo-members')).toBe('workspace_member_added')
         expect(matchFetchEvent(idx, 'PATCH', '/fleet/api/v1/workspaces/w1/members/m1')).toBe('workspace_member_role_changed')
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/workspaces/w1/members/m1')).toBe('workspace_member_removed')
-        expect(matchFetchEvent(idx, 'PATCH', '/fleet/api/v1/runtimes/r1')).toBe('runtime_machine_renamed')
+        // Octo-Q head 258e876e P2:runtime_machine_renamed 从 fetch 泛 PATCH 迁到 BODY_RULES({name} 判别),
+        //   fetch 通道不再映射 —— 非改名的 runtime PATCH 不再被误计为改名。
+        expect(matchFetchEvent(idx, 'PATCH', '/fleet/api/v1/runtimes/r1')).toBeUndefined()
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/runtimes/r1/local-skills')).toBe('skill_runtime_skills_pulled')
         expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/skills/sk1')).toBeUndefined()
         expect(matchFetchEvent(idx, 'PUT', '/fleet/api/v1/skills/sk1')).toBe('skill_saved')
@@ -443,31 +449,34 @@ describe('FETCH_RULES — fleet(Loop)path 通道(T1 同窗内嵌,/fleet/api/v1/*
 describe('FETCH_RULES — doc path 通道(T1 同窗内嵌,/api/v1/docs/*)', () => {
     const idx = buildFetchIndex(FETCH_RULES)
 
-    it('进入只挂唯一信号 creators;/docs、/docs/recent(搜索/筛选共用)不映射', () => {
-        expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/recent/creators')).toBe('document_module_entered')
+    it('进入不再映射(document_module_entered 移出 fetch → host 导航命令式);creators/搜索/筛选均不产出', () => {
+        // Octo-Q head 258e876e P1:document_module_entered 是 Class N 导航,不能挂 GET /docs/recent/creators
+        //   (被 122 ?creator= 筛选共用、任何重拉都重发)。改由 host 导航手势命令式(见 uiOnly pin)。
+        expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/recent/creators')).toBeUndefined()
         // 121 搜索 / 122 筛选带 ?q=/?creator= 打到 /docs、/docs/recent,pathname 与进入相同 → 不映射(退 UI)。
         expect(matchFetchEvent(idx, 'GET', '/api/v1/docs')).toBeUndefined()
         expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/recent')).toBeUndefined()
     })
 
-    it('创建 / 打开 / 评论 / 转发(batch)/ 导出 / 删除', () => {
+    it('创建 / 打开 / 评论 / 导出 / 删除;转发不再挂 grant 端点(移到 WKBase 发送成功命令式)', () => {
         expect(matchFetchEvent(idx, 'POST', '/api/v1/docs')).toBe('document_created')
         expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/view')).toBe('document_opened')
         expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/comments')).toBe('document_commented')
-        // 130 G 类纠偏:恒调 batch,单发不映射。
-        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/forward-grant/batch')).toBe('document_forwarded')
+        // Octo-Q head 258e876e P1:document_forwarded 从授权 batch 端点移到 WKBase.runDocForward 发送成功
+        //   命令式(默认转发路径开关关不打 batch → 原漏计)。两个 forward-grant 端点均不再映射。
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/forward-grant/batch')).toBeUndefined()
         expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/forward-grant')).toBeUndefined()
         expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/d1/export/file')).toBe('document_exported')
         expect(matchFetchEvent(idx, 'DELETE', '/api/v1/docs/d1')).toBe('document_deleted')
     })
 
-    it('成员管理 PUT/DELETE 归一 document_share_managed;GET(打开面板)与 creators 不计', () => {
+    it('成员管理 PUT/DELETE 归一 document_share_managed;GET(打开面板)与 creators 均不计', () => {
         // R13 B4:GET /docs/:id/members 是面板打开的成员列表加载(读,非「管理」动作,且真实写后的
         // 回读会双计)→ 已移出本表,钉死为 undefined;只保留 PUT(改角色)/ DELETE(移除)两个写端点。
         expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/d1/members')).toBeUndefined()
         expect(matchFetchEvent(idx, 'PUT', '/api/v1/docs/d1/members')).toBe('document_share_managed')
         expect(matchFetchEvent(idx, 'DELETE', '/api/v1/docs/d1/members/u1')).toBe('document_share_managed')
-        // /docs/recent/creators 段数同 /docs/:id/members,但字面 recent≠:id 消歧:creators 只落 module_entered。
-        expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/recent/creators')).toBe('document_module_entered')
+        // /docs/recent/creators 段数同 /docs/:id/members,但既不落 module_entered(已移出)也不落 share_managed。
+        expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/recent/creators')).toBeUndefined()
     })
 })

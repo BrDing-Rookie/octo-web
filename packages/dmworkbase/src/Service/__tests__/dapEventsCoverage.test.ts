@@ -98,6 +98,8 @@ describe('TRACK_RULES 路由门 —— 可达性 + 收敛物 token 一致(R13 B5
         '/ppt/d/abc123', // slides 独立文档(documentScene.ts STANDALONE_PPT_DOC_PATH)
         '/docs', // 同壳文档列表页
         '/market', // 插件市场
+        '/loop', // Loop 工作区(octo-loop-module dmloop/src/module.tsx route.register('/loop')):project-*/automation-* 控件宿主
+        '/personal', // 个人工作区(octo-loop-module dmpersonal/src/module.tsx route.register('/personal')):runtime-*/skill-* 控件宿主
         '/fleet', // Loop 任务板
         '/projects', // 项目工作表
         '/s/share', // summary 分享页

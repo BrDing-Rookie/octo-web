@@ -67,6 +67,19 @@ describe('BodyRules — 群资料/设置真实规则命中', () => {
         // remark 是「编辑」语义、无关闭态,保持 presence-only,任何值都记一次编辑。
         expect(g({ remark: '' })).toBe('conversation_remark_edited')
     })
+
+    it('hasKeys 空值加固对既有规则同样生效(P2-7 契约:全局非空存在)', () => {
+        // Octo-Q head 258e876e P2:discriminatorHits 的 null/undefined 加固是全局的,既有规则同受影响。
+        // 无 fallback 规则:{notice:null}(清空公告)不再命中 group_announcement_edited → undefined。
+        expect(put('/api/v1/groups/g1', JSON.stringify({ notice: null }))).toBeUndefined()
+        // 非空值仍命中(空字符串是真实值,presence 语义)。
+        expect(put('/api/v1/groups/g1', JSON.stringify({ notice: '' }))).toBe('group_announcement_edited')
+        expect(put('/api/v1/groups/g1', JSON.stringify({ name: 'x' }))).toBe('group_name_edited')
+        // 有 fallback 规则:{status:null} 从 webhook_enabled_toggled 改落 fallback webhook_edited。
+        expect(put('/api/v1/groups/g1/incoming-webhooks/w1', JSON.stringify({ status: null }))).toBe('webhook_edited')
+        // {status:1} 仍命中启停(非空)。
+        expect(put('/api/v1/groups/g1/incoming-webhooks/w1', JSON.stringify({ status: 1 }))).toBe('webhook_enabled_toggled')
+    })
 })
 
 describe('BodyRules — 隐私 / 边界', () => {
@@ -219,8 +232,27 @@ describe('BODY_RULES — fleet(Loop)body 键通道真实命中', () => {
         expect(computeBodyEvent(idx, 'PATCH', '/fleet/api/v1/autopilots/a1/triggers/t1', j({ enabled: false }))).toBe('automation_trigger_toggled')
     })
 
-    it('POST squads/:id/members:presence 打 expert_team_member_added', () => {
-        expect(computeBodyEvent(idx, 'POST', '/fleet/api/v1/squads/s1/members', j({ member_id: 'm1', member_type: 'user', role: 'x' }))).toBe('expert_team_member_added')
+    it('POST squads/:id/members:expert_team_member_added 已 hold,body 通道不命中(P2:待 dmloop 命令式)', () => {
+        // Octo-Q head 258e876e P2:add=N-fan-out 无关联信号、与 collection-level DELETE 的 remove 单位不一致 →
+        //   hold body 规则,改由 dmloop squad-detail 加成员成功回调命令式(带 squad/batch,与 remove 同「每手势」单位)。
+        expect(computeBodyEvent(idx, 'POST', '/fleet/api/v1/squads/s1/members', j({ member_id: 'm1', member_type: 'user', role: 'x' }))).toBeUndefined()
+    })
+
+    it('PATCH runtimes/:id:带 name=改名;非 name 键 / 显式 null 均不误命中(P2:从 fetch 泛端点迁入,无 fallback)', () => {
+        expect(computeBodyEvent(idx, 'PATCH', '/fleet/api/v1/runtimes/r1', j({ name: 'box-1' }))).toBe('runtime_machine_renamed')
+        // 非改名的 runtime PATCH(改配置)不命中(无 fallback)——修掉「任何 runtime PATCH 都算改名」。
+        expect(computeBodyEvent(idx, 'PATCH', '/fleet/api/v1/runtimes/r1', j({ cpu: 2, memory: 4096 }))).toBeUndefined()
+        // 显式 null name 经空值加固按「不存在」→ 不命中。
+        expect(computeBodyEvent(idx, 'PATCH', '/fleet/api/v1/runtimes/r1', j({ name: null }))).toBeUndefined()
+    })
+
+    it('PUT issues/:id 多键 payload:判别子首中即返序 status>priority>assignee>project>detail(P2:显式优先级)', () => {
+        // 跨项目拖卡带 {status,project_id} → 归 status(status 判别子在前),不被 project 抢。
+        expect(computeBodyEvent(idx, 'PUT', '/fleet/api/v1/issues/i1', j({ status: 'done', project_id: 'p1' }))).toBe('task_status_changed')
+        // 整对象 PUT(恒带 status)→ 归 status,不落 fallback task_detail_edited。
+        expect(computeBodyEvent(idx, 'PUT', '/fleet/api/v1/issues/i1', j({ status: 'todo', priority: 2, assignee_id: 'u1', assignee_type: 'user', project_id: 'p1', title: 't', description: 'd' }))).toBe('task_status_changed')
+        // 无 status 但 priority+project_id 并存 → 归 priority(次序在 project 前)。
+        expect(computeBodyEvent(idx, 'PUT', '/fleet/api/v1/issues/i1', j({ priority: 3, project_id: 'p1' }))).toBe('task_priority_changed')
     })
 
     it('POST webhook-subscriptions:带 project_id=项目 webhook,否则兜底=工作区 webhook', () => {

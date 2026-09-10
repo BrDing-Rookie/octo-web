@@ -194,22 +194,25 @@ export const TRACK_RULES: TrackRule[] = [
     { event: 'task_subtask_create_dialog_opened', testid: 'loop-idp-subissue-add', on: 'click' }, // 181 子回路区 +
     { event: 'task_delete_dialog_opened', testid: 'loop-idp-menu-delete', on: 'click' }, // 184
     //   C —— 自动化模块(AutomationPage / AutopilotDetailPage)。backend-only(207)与无净锚点(219)已跳过。
-    { event: 'automation_create_dialog_opened', testid: 'automation-create-btn', on: 'click' }, // 202 头部
-    { event: 'automation_create_dialog_opened', testid: 'automation-create-btn-empty', on: 'click' }, // 202 空态(工作表未列,补齐,同 164 模式)
-    { event: 'automation_trigger_add_dialog_opened', testid: 'automation-trigger-add-btn', on: 'click' },
-    { event: 'automation_trigger_edit_dialog_opened', testid: 'automation-trigger-edit-btn', on: 'click' },
-    { event: 'automation_trigger_delete_dialog_opened', testid: 'automation-trigger-delete-btn', on: 'click' },
-    { event: 'automation_delete_dialog_opened', testid: 'automation-delete-btn', on: 'click' }, // 列表卡片 + 详情页同 testid
+    //     ⚠️ automation-* / project-* 非 loop-* 前缀,section 头「loop-* 全局唯一无需 route」的论证不覆盖它们
+    //        (Octo-Q head 258e876e P2:泛名 testid 无门 → 同 bundle 其它模块日后取同名控件即误命中)。dmloop 挂载
+    //        于 host route /loop(octo-loop-module dmloop/src/module.tsx route.register('/loop'))→ 加 route:'/loop' 门。
+    { event: 'automation_create_dialog_opened', testid: 'automation-create-btn', route: '/loop', on: 'click' }, // 202 头部
+    { event: 'automation_create_dialog_opened', testid: 'automation-create-btn-empty', route: '/loop', on: 'click' }, // 202 空态(工作表未列,补齐,同 164 模式)
+    { event: 'automation_trigger_add_dialog_opened', testid: 'automation-trigger-add-btn', route: '/loop', on: 'click' },
+    { event: 'automation_trigger_edit_dialog_opened', testid: 'automation-trigger-edit-btn', route: '/loop', on: 'click' },
+    { event: 'automation_trigger_delete_dialog_opened', testid: 'automation-trigger-delete-btn', route: '/loop', on: 'click' },
+    { event: 'automation_delete_dialog_opened', testid: 'automation-delete-btn', route: '/loop', on: 'click' }, // 列表卡片 + 详情页同 testid
     //   B —— 项目模块(ProjectPage / ProjectDetailPage / WebhooksSection / SettingsPage)。
     //     命令式事件(project_status/priority/assignee_changed、project_detail_edited、
     //     project/workspace_webhook_toggled/deleted、workspace_settings_tab_switched)在 dmloop 源码内
     //     Dap.shared.track,不进本表。
-    { event: 'project_view_switched', testid: 'project-view-list', on: 'click' }, // 187
-    { event: 'project_view_switched', testid: 'project-view-card', on: 'click' }, // 187 同事件二 testid(视图模式,Class A 页内激活:按手势计数,重复点当前项再计一次为预期)
-    { event: 'project_searched', testid: 'project-search-input', on: 'click' }, // 188 计搜索框激活(聚焦点击),非 query 串;精确到 query 的去抖发射留 loop 侧命令式(B-loop fast-follow)
-    { event: 'project_create_dialog_opened', testid: 'project-create-btn', on: 'click' }, // 189 头部
-    { event: 'project_create_dialog_opened', testid: 'project-create-btn-empty', on: 'click' }, // 189 空态(工作表未列,补齐入口一致,同 164/202 模式)
-    { event: 'project_delete_dialog_opened', testid: 'project-row-delete-btn', on: 'click' }, // 199 列表+卡片同 testid
+    { event: 'project_view_switched', testid: 'project-view-list', route: '/loop', on: 'click' }, // 187(project-* 非 loop-* → route:'/loop' 门,见 C 段)
+    { event: 'project_view_switched', testid: 'project-view-card', route: '/loop', on: 'click' }, // 187 同事件二 testid(视图模式,Class A 页内激活:按手势计数,重复点当前项再计一次为预期)
+    { event: 'project_searched', testid: 'project-search-input', route: '/loop', on: 'click' }, // 188 计搜索框激活(聚焦点击),非 query 串;精确到 query 的去抖发射留 loop 侧命令式(B-loop fast-follow)
+    { event: 'project_create_dialog_opened', testid: 'project-create-btn', route: '/loop', on: 'click' }, // 189 头部
+    { event: 'project_create_dialog_opened', testid: 'project-create-btn-empty', route: '/loop', on: 'click' }, // 189 空态(工作表未列,补齐入口一致,同 164/202 模式)
+    { event: 'project_delete_dialog_opened', testid: 'project-row-delete-btn', route: '/loop', on: 'click' }, // 199 列表+卡片同 testid
     //   E —— 专家团模块(SquadPage / SquadDetailPage)。命令式(expert_team_leader_changed/
     //     instruction_saved/archived/deleted)在源码内 track,不进本表。
     { event: 'expert_team_tab_switched', testid: 'loop-squad-scope-mine', on: 'click' }, // 244 作用域 tab(Class A 页内激活:按手势计数,重复点再计一次为预期)
@@ -245,11 +248,14 @@ export const TRACK_RULES: TrackRule[] = [
     //     在源码内 track,不进本表。268/273/276 跳过(宿主壳/无 polling 信号)。278 create-btn 头部+空态同 testid。
     //     runtime_tab_viewed/skills_tab_viewed 同样移出本表:侧栏 tab 切换需 !reentry 去重,DOM 委托表达不了
     //     (重复点当前 tab 会重发)—— 改由 dmpersonal usePersonalWorkspace.openTab 的 `if (key !== tab)` 门命令式发射(评审 R6 P1)。
-    { event: 'runtime_add_computer_dialog_opened', testid: 'runtime-add-computer-btn', on: 'click' },
-    { event: 'runtime_machine_rename_dialog_opened', testid: 'runtime-rename-btn', on: 'click' },
-    { event: 'skill_create_dialog_opened', testid: 'skill-create-btn', on: 'click' }, // 头部+空态同 testid
-    { event: 'skill_file_opened', testid: 'skill-file-tree-item', on: 'click' },
-    { event: 'skill_delete_dialog_opened', testid: 'skill-delete-btn', on: 'click' },
+    //     ⚠️ runtime-* / skill-* 是泛名 testid(非 loop-* 前缀),且 skill-* 命名空间已被同 bundle 的
+    //        dmworkskillmarket(skill-publish-entry / skill-sort-option 等)占用(Octo-Q head 258e876e P2)→ 加
+    //        route:'/personal' 门(dmpersonal 挂载于 host route /personal,module.tsx route.register('/personal'))。
+    { event: 'runtime_add_computer_dialog_opened', testid: 'runtime-add-computer-btn', route: '/personal', on: 'click' },
+    { event: 'runtime_machine_rename_dialog_opened', testid: 'runtime-rename-btn', route: '/personal', on: 'click' },
+    { event: 'skill_create_dialog_opened', testid: 'skill-create-btn', route: '/personal', on: 'click' }, // 头部+空态同 testid
+    { event: 'skill_file_opened', testid: 'skill-file-tree-item', route: '/personal', on: 'click' },
+    { event: 'skill_delete_dialog_opened', testid: 'skill-delete-btn', route: '/personal', on: 'click' },
 
     // ---- doc(octo-docs-module,@octo/docs):源直编入本 bundle(同 fleet),Dap 全局委托可命中。
     //      testid 由 docs 源码挂(src/editor、src/board)。命令式事件(document_edited/format_applied/

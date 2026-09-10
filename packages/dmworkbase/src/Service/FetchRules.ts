@@ -228,18 +228,24 @@ export const FETCH_RULES: FetchRule[] = [
     // ---- doc(协作文档,docs module[octo-docs-module] 同窗内嵌,WKApp.apiClient bare-relative → /api/v1/docs/*)
     //   T1 复核(2026-08-18):docs 模块 source-direct 编译进同一 octo-web bundle、共享全局 XHR,
     //   Dap.installHttpWrap 能抓到。逐条对 octo-docs-module src/**/api.ts 真实端点核实(见 dap350 §4.3)。
-    //   119 document_module_entered:挂**唯一信号** GET /docs/recent/creators —— 进入文档 Tab 时才拉;
-    //     /docs、/docs/recent 被搜索(121 ?q=)/筛选(122 ?creator=&type=)共用,且 FetchRules 只按 pathname 匹配、
-    //     不读 query,三者 pathname 相同无法区分,故 121/122 退各仓 UI(搜索框防抖 / 筛选 onChange),不进本表。
-    { method: 'GET', path: '/api/v1/docs/recent/creators', event: 'document_module_entered' },
+    //   119 document_module_entered 不在此通道(Octo-Q head 258e876e P1)—— 它是 Class N 导航事件,
+    //     原挂 GET /docs/recent/creators 违反本 PR 自己在 DAP_EVENTS.md 写下的「Class N 表内无残留」不变量;
+    //     且该端点同时是 122 `?creator=` 筛选的后端(FetchRules 只按 pathname 匹配、不读 query,无法区分进入
+    //     与筛选/重拉),任何筛选打开/重试/刷新都会重发、漏斗顶端被无界放大 —— 复刻 apps_module_entered
+    //     R12 🔴 P1-3 移出 fetch 通道的同一失败模式。改由 host 导航手势命令式发射(apps/web Main/index.tsx +
+    //     tab_low_screen.tsx,menus.id==='docs' 且非 reentry 时计一次,与 contacts_/apps_module_entered 同款),
+    //     故永不得再回 FETCH_RULES(见 FetchRules.test.ts uiOnly pin)。122 ?creator= 筛选事件不受影响(本就退各仓 UI)。
     { method: 'POST', path: '/api/v1/docs', event: 'document_created' },
     { method: 'POST', path: '/api/v1/docs/:id/view', event: 'document_opened' },
     // 128 document_commented:ROOT 与 REPLY 都 POST /docs/:id/comments(comments/api.ts),path 层不分,
     //   回复会一并计入「评论」(整合表语义为评论行为,可接受近似)。
     { method: 'POST', path: '/api/v1/docs/:id/comments', event: 'document_commented' },
-    // 130 document_forwarded:生产恒调 batch(startDocForward→grantForwardMany→grantForwardBatch),
-    //   单发 POST /docs/:id/forward-grant 生产从不调用(§9.3 G 类纠偏),故只挂 /batch 变体。
-    { method: 'POST', path: '/api/v1/docs/:id/forward-grant/batch', event: 'document_forwarded' },
+    // 130 document_forwarded 不在此通道(Octo-Q head 258e876e P1)—— 原挂 POST /docs/:id/forward-grant/batch,
+    //   但该授权批处理仅在用户显式打开「先授权后发」开关(默认关闭:useForwardGrant.ts:35,80 契约 +
+    //   WKBase/index.tsx:391 门控)时才调用;默认转发路径(开关关)照发文档卡片却不打该端点 → 漏斗分子
+    //   结构性缺失(document_forward_panel_opened 全进分母、仅授权转发进分子)。改由转发发送成功路径命令式
+    //   发射(WKBase.runDocForward 在 ForwardService.send 后、至少一个目标成功时计一次,与 message_forwarded
+    //   同款),覆盖默认转发路径、不受授权开关影响,故永不得再回 FETCH_RULES(见 FetchRules.test.ts 负向 pin)。
     // 131 document_share_managed:MemberPanel 的 PUT(改角色)/ DELETE(移除)两个写端点归一。
     //   GET /docs/:id/members(打开面板拉成员列表)不在本表 —— 是「读」非「管理」动作,且真实写(PUT/DELETE)
     //   成功后面板回读同一 GET 会二次命中 → 双计。只保留写端点,读端点按 FetchRules.ts:123 收益门剔除(R13 B4)。
@@ -314,8 +320,12 @@ export const FETCH_RULES: FetchRule[] = [
     { method: 'PATCH', path: '/fleet/api/v1/workspaces/:id/members/:id', event: 'workspace_member_role_changed' },
     { method: 'DELETE', path: '/fleet/api/v1/workspaces/:id/members/:id', event: 'workspace_member_removed' },
     // M10 运行时 / Skills
-    { method: 'PATCH', path: '/fleet/api/v1/runtimes/:id', event: 'runtime_machine_renamed' },
-    // 280 skill_runtime_skills_pulled:只挂 POST(受理),GET /local-skills/:id 是 900ms 轮询、pending 亦 2xx,勿计。
+    // 282 runtime_machine_renamed 不在此通道(Octo-Q head 258e876e P2)—— PATCH /fleet/api/v1/runtimes/:id 是
+    //   泛化的部分更新端点,任何非改名的 runtime PATCH 成功也会被误计为改名。改到 BODY_RULES 按 { hasKeys:['name'] }
+    //   无 fallback 判别(与 automation_renamed 同款),仅带 name 键的 PATCH 才计。见 BodyRules.ts。
+    // 280 skill_runtime_skills_pulled:只挂 POST。⚠️ 该端点是「受理≠成功」(POST /runtimes/:id/local-skills
+    //   仅受理拉取请求,真成功要 GET /local-skills/:id 轮询到 completed);本事件按**请求已受理**口径采集,
+    //   非完成率(DAP_EVENTS.md 行已注明);GET /local-skills/:id 900ms 轮询、pending 亦 2xx,勿计。
     { method: 'POST', path: '/fleet/api/v1/runtimes/:id/local-skills', event: 'skill_runtime_skills_pulled' },
     { method: 'PUT', path: '/fleet/api/v1/skills/:id', event: 'skill_saved' },
     { method: 'DELETE', path: '/fleet/api/v1/skills/:id', event: 'skill_deleted' },

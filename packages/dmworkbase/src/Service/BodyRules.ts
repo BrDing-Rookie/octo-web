@@ -30,7 +30,12 @@ type BodyPrimitive = string | number | boolean
 /**
  * 单条判别子:命中即返回其 event。两种匹配(可组合,全部 AND):
  *   - `hasKeys`  body 顶层**存在**列出的全部键且其值非 null/undefined(presence-only,不看具体值;
- *              显式空值 null/undefined 按「不存在」处理,见 discriminatorHits 的 P2#1 加固)。
+ *              显式 null/undefined 按「键不存在」处理,见 discriminatorHits 的空值加固)。
+ *              ⚠️ 该「非空存在」语义是**全局**的 —— discriminatorHits 为本表全部 13 条规则共用,不止 fleet
+ *              那条:无 fallback 的规则在键为显式 null 时改为**不发**(如 group_announcement_edited 的
+ *              {notice:null} 清空公告),有 fallback 的规则**改落 fallback**(如 webhook_enabled_toggled 的
+ *              {status:null} → webhook_edited)。目前无可达调用方传显式 null(remarkChannel / updateChannelField
+ *              均 typed string),属契约收紧而非线上回归;既有规则的空值行为由 BodyRules.test.ts 回归钉死。
  *   - `equals`   body 顶层 `key` 的值 ∈ 白名单 `values`(唯一「看值」处,值只做相等比较不外泄)。
  * 判别子在 BodyRule.discriminators 里**按序**匹配,先中者胜。
  */
@@ -283,6 +288,11 @@ export const BODY_RULES: BodyRule[] = [
     // PUT /fleet/api/v1/issues/:id —— 任务属性 inline 单键部分更新(requestStatus/requestAssign/详情右栏 patch):
     //   status/priority/project_id 各单键;assignee 成对(assignee_id+assignee_type)。都没中 → 编辑标题/描述(175)。
     //   (改父任务 patch{parent_issue_id} 也落 fallback→task_detail_edited,整合表无独立事件,可接受。)
+    //   ⚠️ 判别子**首中即返**(数组序,见 discriminatorHits 调用点 computeBodyEvent),这是**显式决策**而非偶然
+    //     (Octo-Q head 258e876e P2):多键 payload(跨项目拖卡带 {status,project_id},或整对象 PUT 恒带 status)
+    //     按此序归为 **status 变更** —— inline 单键 patch 是主要手势,整对象 PUT 属边界;status 优先于 priority/
+    //     project_id/assignee/detail,避免真实状态变更被 project/detail 吞掉。优先级由 BodyRules.test.ts 的
+    //     多键 + 整对象用例钉死,改数组序即红。
     {
         method: 'PUT',
         path: '/fleet/api/v1/issues/:id',
@@ -320,13 +330,21 @@ export const BODY_RULES: BodyRule[] = [
         ],
     },
 
-    // POST /fleet/api/v1/squads/:id/members —— 添加专家团成员(squadApi.addMember,body{member_type,member_id,role})。
-    //   ⚠️ 与创建专家团时批量加成员(247)完全同形,前端无 batch 标识:靠中央映射时序分组区分,前端只 presence 打
-    //   (§9.3 唯一遗留外部确认项,不行则接受与 247 合一)。presence-only,member_id 值不外泄。
+    // POST /fleet/api/v1/squads/:id/members —— expert_team_member_added **暂 hold**,不进 body 通道
+    //   (Octo-Q head 258e876e P2)。两个缺陷:①无关联信号 —— 建团批量加 N 成员发 N 个同形 POST,mapped 事件
+    //   只带 {} props(Dap 从不外泄 body 值),中心侧仅 device_id+时序邻近,与「事后单独加一名成员」无法区分;
+    //   ②计数单位不一致 —— 移除侧 DELETE /squads/:id/members 是 collection-level(一次手势删 N 人 → 1 个
+    //   expert_team_member_removed),add 每人 1 个 → add=N vs remove=1 单位不对齐。正解:从 squad-detail 加成员
+    //   成功回调命令式发射(带 squad/batch 标识、与 remove 同「每手势」单位),站点在 octo-loop-module dmloop,
+    //   属**已知交接依赖**:其上线前 add 不发(见 DAP_EVENTS.md expert_team_member_added 行 + PR 说明)。
+
+    // PATCH /fleet/api/v1/runtimes/:id —— 机器改名(Octo-Q head 258e876e P2:从 fetch 泛 PATCH 迁入本通道)。
+    //   runtimes PATCH 是泛化部分更新端点,fetch 层按 method+path 会把任何非改名 PATCH 也误计为改名;改为
+    //   { hasKeys:['name'] } 无 fallback 判别,仅带 name 键的 PATCH 命中(与 automation_renamed 同款)。
     {
-        method: 'POST',
-        path: '/fleet/api/v1/squads/:id/members',
-        discriminators: [{ event: 'expert_team_member_added', hasKeys: ['member_id'] }],
+        method: 'PATCH',
+        path: '/fleet/api/v1/runtimes/:id',
+        discriminators: [{ event: 'runtime_machine_renamed', hasKeys: ['name'] }],
     },
 
     // POST /fleet/api/v1/webhook-subscriptions —— 项目 vs 工作区 webhook(webhookApi.createWebhook 共用端点):

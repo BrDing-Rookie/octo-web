@@ -10,6 +10,7 @@ import { DocumentShareCardContent } from "../../Messages/DocumentShareCard/Docum
 import { isConversationDisbanded } from "../../Utils/groupDisband";
 import { ForwardService, type ForwardResult, type ForwardSender } from "../../Service/ForwardService";
 import { interpretForwardResult } from "../../Service/forwardResultToast";
+import { Dap } from "../../Service/Dap";
 import UserInfo from "../UserInfo";
 import BotDetailModal from "../BotDetailModal";
 import WKApp from "../../App";
@@ -496,6 +497,14 @@ export default class WKBase
     // 3) partial-failure Toast (reuse the dmworksummary范式). 分母维度用 targets，
     // 保留旧的用户可见语义（原代码 total=channels.length，即 result.targets）。
     const state = interpretForwardResult(result, "targets");
+    // Octo-Q head 258e876e P1: document_forwarded fires here on the real forward-send
+    // success path (>=1 target sent), NOT on the opt-in grant batch endpoint (default-off
+    // switch, so the default "forward doc to chat" produced zero events). Mirrors the
+    // message_forwarded pattern in Conversation (emit unless all targets failed). Once per
+    // forward gesture; carries no payload (privacy: {} props).
+    if (state.kind !== "all-failed") {
+        Dap.shared.track("document_forwarded", {});
+    }
     if (state.kind === "all-failed") {
       Toast.error(t("base.forwardModal.grant.sendFailed"));
     } else if (state.kind === "partial") {
