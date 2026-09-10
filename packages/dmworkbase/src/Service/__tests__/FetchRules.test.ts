@@ -10,15 +10,15 @@ import { FETCH_RULES, FETCH_IGNORE, buildFetchIndex, matchFetchEvent, rawPathnam
 
 describe('FetchRules — matchFetchEvent 语义', () => {
     const rules: FetchRule[] = [
-        { method: 'GET', path: '/fleet/api/v1/issues/search', event: 'task_board_filtered' },
+        { method: 'GET', path: '/fleet/api/v1/issues/search', event: FETCH_IGNORE },
         { method: 'GET', path: '/fleet/api/v1/issues/:id', event: 'task_opened' },
         { method: 'POST', path: '/fleet/api/v1/issues/:id/comments', event: 'task_commented' },
         { method: 'DELETE', path: '/fleet/api/v1/issues/:id', event: 'task_deleted' },
     ]
     const idx = buildFetchIndex(rules)
 
-    it('字面段精确命中', () => {
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/search')).toBe('task_board_filtered')
+    it('字面段命中抑制哨兵 → 主动不上报(undefined)', () => {
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/search')).toBeUndefined()
     })
 
     it('通配段匹配任意单段', () => {
@@ -26,9 +26,9 @@ describe('FetchRules — matchFetchEvent 语义', () => {
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/issues/abc/comments')).toBe('task_commented')
     })
 
-    it('most-specific-wins:字面规则压过通配规则(/issues/search 不落到 :id)', () => {
-        // search 同时能匹配 /issues/search 与 /issues/:id,取通配更少者。
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/search')).toBe('task_board_filtered')
+    it('most-specific-wins:字面 FETCH_IGNORE 压过通配 :id(/issues/search 不落到 task_opened)', () => {
+        // search 同时能匹配 /issues/search 与 /issues/:id,取通配更少者:字面 FETCH_IGNORE 胜 → undefined。
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/search')).toBeUndefined()
     })
 
     it('method 分桶:同 path 不同 verb 命中不同事件', () => {
@@ -376,11 +376,12 @@ describe('FETCH_RULES — 十二审 🔴 五类「2xx ≠ 用户动作(且成功
 describe('FETCH_RULES — fleet(Loop)path 通道(T1 同窗内嵌,/fleet/api/v1/*)', () => {
     const idx = buildFetchIndex(FETCH_RULES)
 
-    it('任务板 / 任务:169 三端点同一事件,171 :id 打开', () => {
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues')).toBe('task_board_filtered')
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/grouped')).toBe('task_board_filtered')
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/search')).toBe('task_board_filtered')
-        // most-specific-wins:grouped/search 字面段压过 :id,不落 task_opened。
+    it('任务板 / 任务::id 打开;列表加载 GET (issues / grouped / search) 不再映射 task_board_filtered', () => {
+        // task_board_filtered 已移出 path 通道(reload GET 表达不了筛选意图,改 loop 侧命令式);
+        // /issues 无 :id 同段冲突 → 直接无映射;/grouped、/search 为字面段,挂 FETCH_IGNORE 压过 :id,不误报 task_opened。
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/grouped')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/search')).toBeUndefined()
         expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/i123')).toBe('task_opened')
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/issues/i123/comments')).toBe('task_commented')
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/issues/i123')).toBe('task_deleted')

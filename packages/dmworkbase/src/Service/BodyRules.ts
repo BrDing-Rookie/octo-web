@@ -258,7 +258,7 @@ export const BODY_RULES: BodyRule[] = [
         ],
     },
 
-    // ==== fleet(Loop,@dmwork/loop 同窗内嵌,/fleet/api/v1/*)——T1 复核证伪旧「独立 SPA 抓不到」假设 ====
+    // ==== fleet(Loop module[octo-loop-module] 同窗内嵌,/fleet/api/v1/*)——T1 复核证伪旧「独立 SPA 抓不到」假设 ====
     //   loop 模块 source-direct 编译进同一 bundle,axios(LOOP_API_BASE)底层走全局 XHR → body-clone 能拿到
     //   字符串体。逐条对 octo-loop-module packages/dmloop/src/api/*.ts 真实 payload 核实(见 dap350 §7.3)。
 

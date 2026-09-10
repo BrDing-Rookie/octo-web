@@ -65,7 +65,7 @@ describe('DAP_EVENTS.md 收敛物一致性(D1/D2 回归守卫)', () => {
         expect(documented.size).toBeGreaterThan(200)
         expect(documented.has('user_login')).toBe(true) // §1 fetch
         expect(documented.has('webhook_edited')).toBe(true) // D2:im/base body fallback
-        expect(documented.has('task_board_filtered')).toBe(true) // §6 fleet fetch
+        expect(documented.has('task_opened')).toBe(true) // §6 fleet fetch
         expect(documented.has('document_created')).toBe(true) // §6 doc fetch
     })
 

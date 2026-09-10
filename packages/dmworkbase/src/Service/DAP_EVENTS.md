@@ -51,8 +51,8 @@ events by the negative `channelUniqueness` / FetchRules guards asserting they mu
 appear in the path channel. Genuinely unpinned positive fires are the honest gap this
 table surfaces for follow-up.
 
-Total rows in this table: **260** (`grep -c '^| \`'` — includes the 4 infra rows and any
-removed-rule tombstones kept as ~~struck~~ history). §1–§5 cover the im/base + summary +
+Total rows in this table: **264** (`grep -c '^| \`'` — includes the 4 infra rows; removed-rule
+tombstones kept as ~~struck~~ history sit outside this grep and are not counted). §1–§5 cover the im/base + summary +
 market events; §6 covers the fleet (Loop) + doc central-mapping events wired by dap350
 (PR #1443), which the T1 re-review confirmed are captured by the shared octo-web bundle and
 are therefore no longer out of scope. The imperative / data-track fleet/doc events emitted
@@ -296,7 +296,7 @@ live in those packages' own call sites and are tracked by B-loop / B-docs, not r
 | `skill_opened` | fetch | GET `/fleet/api/v1/skills/:id` → 2xx | Non-2xx / cross-origin | None — per successful request | — (generic FetchRules path-hit invariant + fleet/doc path cases in FetchRules.test.ts) |
 | `skill_runtime_skills_pulled` | fetch | POST `/fleet/api/v1/runtimes/:id/local-skills` → 2xx | Non-2xx / cross-origin | None — per successful request | — (generic FetchRules path-hit invariant + fleet/doc path cases in FetchRules.test.ts) |
 | `skill_saved` | fetch | PUT `/fleet/api/v1/skills/:id` → 2xx | Non-2xx / cross-origin | None — per successful request | — (generic FetchRules path-hit invariant + fleet/doc path cases in FetchRules.test.ts) |
-| `task_board_filtered` | fetch | GET `/fleet/api/v1/issues` / GET `/fleet/api/v1/issues/grouped` / GET `/fleet/api/v1/issues/search` → 2xx | Non-2xx / cross-origin | None — per successful request | — (generic FetchRules path-hit invariant + fleet/doc path cases in FetchRules.test.ts) |
+| ~~`task_board_filtered`~~ | ~~fetch~~ | 从 path 通道移除 (R13 B2) — GET `/issues` / `/grouped` / `/search` 均为任务板列表 reload 端点,一次手势即触发,fetch 通道表达不了「筛选」意图且会与 `task_board_viewed` 双发。精确到筛选/搜索手势的 `task_board_filtered` 改由 loop 模块命令式发射 (B-loop),不在本中央表列举。`/grouped`·`/search` 现挂 `FETCH_IGNORE` 压过 `/issues/:id` | — | — | FetchRules.test.ts — 断言三端点均 `undefined`,`/issues/:id`→`task_opened` |
 | `task_commented` | fetch | POST `/fleet/api/v1/issues/:id/comments` → 2xx | Non-2xx / cross-origin | None — per successful request | — (generic FetchRules path-hit invariant + fleet/doc path cases in FetchRules.test.ts) |
 | `task_deleted` | fetch | DELETE `/fleet/api/v1/issues/:id` → 2xx | Non-2xx / cross-origin | None — per successful request | — (generic FetchRules path-hit invariant + fleet/doc path cases in FetchRules.test.ts) |
 | `task_opened` | fetch | GET `/fleet/api/v1/issues/:id` → 2xx | Non-2xx / cross-origin | None — per successful request | — (generic FetchRules path-hit invariant + fleet/doc path cases in FetchRules.test.ts) |
@@ -389,4 +389,4 @@ live in those packages' own call sites and are tracked by B-loop / B-docs, not r
 
 ---
 
-_Generated from the round-6 source of truth (§1–§5 rule tables + data-track attrs + imperative call sites) + dap350 fleet/doc rule tables (§6). 260 event rows (`grep -c '^| \`'`, includes 4 infra rows)._
+_Generated from the round-6 source of truth (§1–§5 rule tables + data-track attrs + imperative call sites) + dap350 fleet/doc rule tables (§6). 264 event rows (`grep -c '^| \`'`, includes 4 infra rows)._

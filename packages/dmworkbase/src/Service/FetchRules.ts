@@ -273,20 +273,23 @@ export const FETCH_RULES: FetchRule[] = [
     //   的命令式挂载点(非本通道),删除后回读刷新不会误命中本规则(方法不同)。
     { method: 'DELETE', path: '/api/v1/manager/secrets/:id', event: 'settings_secrets_deleted' },
     { method: 'POST', path: '/v1/auth/oidc/:seg/logout', event: 'user_logout' },
-    // ---- fleet(Loop:task/project/automation/expert/squad/workspace/skill,@dmwork/loop 同窗内嵌)
+    // ---- fleet(Loop:task/project/automation/expert/squad/workspace/skill,Loop module[octo-loop-module] 同窗内嵌)
     //   T1 复核(2026-08-18):loop 模块 source-direct 编译进同一 octo-web bundle,axios baseURL
     //   LOOP_API_BASE='/fleet/api/v1' 底层走全局 XHR → Dap.installHttpWrap 能抓到(浏览器观测前缀
     //   /fleet/api/v1/*,/v1 剥前缀是 nginx→后端、浏览器不可见)。逐条对 octo-loop-module
     //   packages/dmloop/src/api/*.ts 真实端点核实(见 dap350 §7.3)。
     //   159 workspace_switched 不在本表 —— switchWorkspace 仅设 context + 重挂 tab(useLoopWorkspace.tsx:371),
-    //     无专属端点,后续 GET /issues 等归属 task_board_filtered 等,退各仓 UI(选工作区 onClick 命令式)。
+    //     无专属端点,切工作区后续的 GET /issues 等仅是列表 reload(见下,不再映射事件),退各仓 UI(选工作区 onClick 命令式)。
     // A1 工作区
     { method: 'POST', path: '/fleet/api/v1/workspaces', event: 'workspace_created' },
-    // A2/A3 任务板:169 task_board_filtered 三端点(reload 按 view+keyword 分裂,§9.3 三端点同一事件);
-    //   grouped/search 为字面段,most-specific-wins 压过 :id(task_opened),测试有锁。
-    { method: 'GET', path: '/fleet/api/v1/issues', event: 'task_board_filtered' },
-    { method: 'GET', path: '/fleet/api/v1/issues/grouped', event: 'task_board_filtered' },
-    { method: 'GET', path: '/fleet/api/v1/issues/search', event: 'task_board_filtered' },
+    // A2/A3 任务板:task_board_filtered 从 path 通道移除 —— GET /issues、/issues/grouped、/issues/search
+    //   都是任务板的列表加载/reload 端点(进板即拉、切 scope/view 每次重拉、增删改后刷新),一次手势即触发;
+    //   把「筛选」意图钉在 reload GET 上会与 task_board_viewed 双发、且指标被非筛选流量淹没(评审 B2/Octo-Q P1)。
+    //   与本文件既有先例(settings_secrets_opened、apps_module_entered 均移出 fetch)一致:精确到筛选/搜索
+    //   手势的 task_board_filtered 改由 loop 侧命令式发射(B-loop fast-follow),故此处不再挂 path 规则。
+    //   grouped/search 为字面段,仍需 FETCH_IGNORE 压过 /issues/:id(task_opened),否则列表加载会误报 task_opened。
+    { method: 'GET', path: '/fleet/api/v1/issues/grouped', event: FETCH_IGNORE },
+    { method: 'GET', path: '/fleet/api/v1/issues/search', event: FETCH_IGNORE },
     { method: 'GET', path: '/fleet/api/v1/issues/:id', event: 'task_opened' },
     { method: 'POST', path: '/fleet/api/v1/issues/:id/comments', event: 'task_commented' },
     { method: 'DELETE', path: '/fleet/api/v1/issues/:id', event: 'task_deleted' },

@@ -209,7 +209,7 @@ export const TRACK_RULES: TrackRule[] = [
     //     Dap.shared.track,不进本表。
     { event: 'project_view_switched', testid: 'project-view-list', on: 'click' }, // 187
     { event: 'project_view_switched', testid: 'project-view-card', on: 'click' }, // 187 同事件二 testid(本地视图切换,重复点当前项过计待裁)
-    { event: 'project_searched', testid: 'project-search-input' }, // 188 输入框
+    { event: 'project_searched', testid: 'project-search-input', on: 'click' }, // 188 计搜索框激活(聚焦点击),非 query 串;精确到 query 的去抖发射留 loop 侧命令式(B-loop fast-follow)
     { event: 'project_create_dialog_opened', testid: 'project-create-btn', on: 'click' }, // 189 头部
     { event: 'project_create_dialog_opened', testid: 'project-create-btn-empty', on: 'click' }, // 189 空态(工作表未列,补齐入口一致,同 164/202 模式)
     { event: 'project_delete_dialog_opened', testid: 'project-row-delete-btn', on: 'click' }, // 199 列表+卡片同 testid
@@ -236,7 +236,7 @@ export const TRACK_RULES: TrackRule[] = [
     { event: 'expert_tab_switched', testid: 'loop-agent-scope-mine', on: 'click' }, // 作用域 tab(重复点过计待裁)
     { event: 'expert_tab_switched', testid: 'loop-agent-scope-all', on: 'click' },
     { event: 'expert_tab_switched', testid: 'loop-agent-scope-archived', on: 'click' },
-    { event: 'expert_searched', testid: 'loop-agent-search-input' },
+    { event: 'expert_searched', testid: 'loop-agent-search-input', on: 'click' }, // 计搜索框激活(聚焦点击),非 query 串;精确 query 去抖发射留 loop 侧命令式(B-loop fast-follow)
     { event: 'expert_create_dialog_opened', testid: 'loop-agent-create-btn', on: 'click' }, // 头部+空态同 testid
     { event: 'expert_run_history_viewed', testid: 'loop-agent-tab-profile', on: 'click' },
     { event: 'expert_skill_add_dialog_opened', testid: 'loop-agent-add-skill-btn', on: 'click' }, // 头部+空态同 testid
@@ -261,7 +261,7 @@ export const TRACK_RULES: TrackRule[] = [
     //   编辑器(EditorShell / Toolbar / DocMoreMenu):testid 均 doc-*/docs-* 自命名,全局唯一,无需 route。
     { event: 'document_tab_switched', testid: 'docs-tab-recent', on: 'click' }, // 重复点当前 tab 过计待裁(同 fleet 作用域 tab)
     { event: 'document_tab_switched', testid: 'docs-tab-mine', on: 'click' },
-    { event: 'document_comment_input_opened', testid: 'comment-bubble-start', route: '/docs', on: 'click' }, // 非 doc- 前缀,加 route 门防误配
+    { event: 'document_comment_input_opened', testid: 'comment-bubble-start', route: '/d', on: 'click' }, // 非 doc- 前缀,route 门防误配。标准文档编辑面在 /d/:docId(docLink.ts),非同壳 /docs 列表页 → 门收 /d
     { event: 'document_forward_panel_opened', testid: 'doc-forward-btn', on: 'click' },
     { event: 'document_open_in_new_page', testid: 'doc-more-item-open-new-page', on: 'click' },
     { event: 'document_history_viewed', testid: 'doc-more-item-history', on: 'click' },
@@ -281,5 +281,5 @@ export const TRACK_RULES: TrackRule[] = [
     { event: 'document_insert_used', testid: 'doc-insert-link', on: 'click' },
     //   画板(BoardShell,Excalidraw):151 find_on_canvas 用 Excalidraw 原生 toolbar-search(泛名),
     //     加 route:/docs 锁定;⚠️ Cmd+F 键盘打开查找不产生对该元素的点击 → 纯委托漏键盘路径(待裁)。
-    { event: 'whiteboard_find_on_canvas', testid: 'toolbar-search', route: '/docs', on: 'click' }, // 151
+    { event: 'whiteboard_find_on_canvas', testid: 'toolbar-search', route: '/d', on: 'click' }, // 151 白板在 /d/:docId(非 /docs 列表页)
 ]
