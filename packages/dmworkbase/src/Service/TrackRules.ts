@@ -178,8 +178,10 @@ export const TRACK_RULES: TrackRule[] = [
     //   的 module_entered/viewed 系列**不走本表**:DOM 委托无法表达 !reentry 去重(重复点当前 tab 会重发,
     //   Dap.track 无去重),这正是 apps_module_entered 移出的同一原因(评审 R6 P1)。改由 loop 侧命令式发射 ——
     //   见 dmloop useLoopWorkspace.openTab 的 `if (key !== tab)` 门(七事件一次映射)。
-    // 167 作用域 tab(全部/成员/专家)—— 同一事件三 testid。⚠️「重复点当前 tab」经 DOM 委托会再计一次
-    //     (同 octo-web market_tab_switched 的过计),已向 owner 标注待裁,暂按工作表 dom-testid。
+    // 167 作用域 tab(全部/成员/专家)—— 同一事件三 testid,留在本表。判为 **Class A(页内激活)**:
+    //     与上面 Class N 的导航/入口 tab(module_entered/viewed,须 !reentry 去重)不同,作用域段是页内
+    //     激活手势 —— 按激活手势计数,重复点当前项再计一次为**预期**(有界,中心侧按时间/会话聚合去重),
+    //     故不加 !reentry 门、留 DOM 委托、不移出本表(owner R6 裁定;详见 DAP_EVENTS.md §6.3 Class N vs A)。
     { event: 'task_board_segment_switched', testid: 'loop-issue-scope-all', on: 'click' },
     { event: 'task_board_segment_switched', testid: 'loop-issue-scope-members', on: 'click' },
     { event: 'task_board_segment_switched', testid: 'loop-issue-scope-agents', on: 'click' },
@@ -203,14 +205,14 @@ export const TRACK_RULES: TrackRule[] = [
     //     project/workspace_webhook_toggled/deleted、workspace_settings_tab_switched)在 dmloop 源码内
     //     Dap.shared.track,不进本表。
     { event: 'project_view_switched', testid: 'project-view-list', on: 'click' }, // 187
-    { event: 'project_view_switched', testid: 'project-view-card', on: 'click' }, // 187 同事件二 testid(本地视图切换,重复点当前项过计待裁)
+    { event: 'project_view_switched', testid: 'project-view-card', on: 'click' }, // 187 同事件二 testid(视图模式,Class A 页内激活:按手势计数,重复点当前项再计一次为预期)
     { event: 'project_searched', testid: 'project-search-input', on: 'click' }, // 188 计搜索框激活(聚焦点击),非 query 串;精确到 query 的去抖发射留 loop 侧命令式(B-loop fast-follow)
     { event: 'project_create_dialog_opened', testid: 'project-create-btn', on: 'click' }, // 189 头部
     { event: 'project_create_dialog_opened', testid: 'project-create-btn-empty', on: 'click' }, // 189 空态(工作表未列,补齐入口一致,同 164/202 模式)
     { event: 'project_delete_dialog_opened', testid: 'project-row-delete-btn', on: 'click' }, // 199 列表+卡片同 testid
     //   E —— 专家团模块(SquadPage / SquadDetailPage)。命令式(expert_team_leader_changed/
     //     instruction_saved/archived/deleted)在源码内 track,不进本表。
-    { event: 'expert_team_tab_switched', testid: 'loop-squad-scope-mine', on: 'click' }, // 244 作用域 tab(重复点过计待裁)
+    { event: 'expert_team_tab_switched', testid: 'loop-squad-scope-mine', on: 'click' }, // 244 作用域 tab(Class A 页内激活:按手势计数,重复点再计一次为预期)
     { event: 'expert_team_tab_switched', testid: 'loop-squad-scope-all', on: 'click' },
     // 245 筛选/排序:领队/创建人为运行时聚合的 actor,无静态语义值 → 按筛选维度给 testid;sort 为静态枚举逐项。
     { event: 'expert_team_filtered', testid: 'loop-squad-filter-leader', on: 'click' },
@@ -228,7 +230,7 @@ export const TRACK_RULES: TrackRule[] = [
     //   D —— 专家模块(AgentPage / AgentDetailPage)。命令式(expert_deleted/runtime_changed/
     //     property_edited/instruction_saved/mcp_saved/skill_attached/skill_removed/env_var_added/
     //     env_var_removed/archived)在源码内 track,不进本表。225/233/236 头部+空态同 testid。
-    { event: 'expert_tab_switched', testid: 'loop-agent-scope-mine', on: 'click' }, // 作用域 tab(重复点过计待裁)
+    { event: 'expert_tab_switched', testid: 'loop-agent-scope-mine', on: 'click' }, // 作用域 tab(Class A 页内激活:按手势计数,重复点再计一次为预期)
     { event: 'expert_tab_switched', testid: 'loop-agent-scope-all', on: 'click' },
     { event: 'expert_tab_switched', testid: 'loop-agent-scope-archived', on: 'click' },
     { event: 'expert_searched', testid: 'loop-agent-search-input', on: 'click' }, // 计搜索框激活(聚焦点击),非 query 串;精确 query 去抖发射留 loop 侧命令式(B-loop fast-follow)
@@ -255,13 +257,13 @@ export const TRACK_RULES: TrackRule[] = [
     //      Dap.track,不进本表。编辑器/表格/画板渲染在两个独立文档命名空间 /d/:docId(标准)+
     //      /ppt/d/:docId(slides,documentScene.ts),非同壳 /docs 列表页 → 泛名 testid 用 route 门锁定(见 :264/:284)。
     //   编辑器(EditorShell / Toolbar / DocMoreMenu):testid 均 doc-*/docs-* 自命名,全局唯一,无需 route。
-    { event: 'document_tab_switched', testid: 'docs-tab-recent', on: 'click' }, // 重复点当前 tab 过计待裁(同 fleet 作用域 tab)
+    { event: 'document_tab_switched', testid: 'docs-tab-recent', on: 'click' }, // 页内内容 tab,Class A 页内激活:按手势计数,重复点再计一次为预期(同 fleet 作用域 tab)
     { event: 'document_tab_switched', testid: 'docs-tab-mine', on: 'click' },
     { event: 'document_comment_input_opened', testid: 'comment-bubble-start', route: ['/d', '/ppt/d'], on: 'click' }, // 非 doc- 前缀,route 门防误配。编辑面在两个独立文档命名空间 /d/:docId(标准)+ /ppt/d/:docId(slides,documentScene.ts),非同壳文档列表页 → 门收两者(R13 B5)
     { event: 'document_forward_panel_opened', testid: 'doc-forward-btn', on: 'click' },
     { event: 'document_open_in_new_page', testid: 'doc-more-item-open-new-page', on: 'click' },
     { event: 'document_history_viewed', testid: 'doc-more-item-history', on: 'click' },
-    { event: 'document_outline_toggled', testid: 'doc-outline-toggle', on: 'click' }, // toggle:开+关同 testid,重复触发待裁
+    { event: 'document_outline_toggled', testid: 'doc-outline-toggle', on: 'click' }, // toggle:开+关同 testid,Class A 页内激活,每次切换按手势计一次(有界,中心侧聚合去重)
     // 139 插入:同一事件多 testid(image/file/table/bookmark/emoji/mention/details/callout/formula*/link)。
     //   emoji 工作表未列但为真实插入项,已补;formula 拆 inline/block 两 testid(docs 代理核实)。
     { event: 'document_insert_used', testid: 'doc-insert-image', on: 'click' },

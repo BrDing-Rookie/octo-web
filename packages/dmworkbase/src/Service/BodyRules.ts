@@ -29,7 +29,8 @@ type BodyPrimitive = string | number | boolean
 
 /**
  * 单条判别子:命中即返回其 event。两种匹配(可组合,全部 AND):
- *   - `hasKeys`  body 顶层**存在**列出的全部键(presence-only,不看值)。
+ *   - `hasKeys`  body 顶层**存在**列出的全部键且其值非 null/undefined(presence-only,不看具体值;
+ *              显式空值 null/undefined 按「不存在」处理,见 discriminatorHits 的 P2#1 加固)。
  *   - `equals`   body 顶层 `key` 的值 ∈ 白名单 `values`(唯一「看值」处,值只做相等比较不外泄)。
  * 判别子在 BodyRule.discriminators 里**按序**匹配,先中者胜。
  */
@@ -113,7 +114,13 @@ function pathMatches(rule: CompiledBodyRule, actual: string[]): boolean {
 function discriminatorHits(d: BodyDiscriminator, body: Record<string, unknown>): boolean {
     if (d.hasKeys) {
         for (const k of d.hasKeys) {
+            // presence-only,但显式 null / undefined 视为「键不存在」(P2#1 加固)。
+            //   前端有时会显式带上一个空值(如 { parent_issue_id: null } 表示「无父」),此时
+            //   JSON.stringify 不省略该键;若只看 hasOwnProperty,子任务判别子会被空值误命中,把
+            //   「新建顶层任务」错记成 task_subtask_created。要求值非 null/undefined 后,这类空值键
+            //   落到兜底事件(如 task_created),与真正带父 id 的子任务区分开。
             if (!Object.prototype.hasOwnProperty.call(body, k)) return false
+            if (body[k] === null || body[k] === undefined) return false
         }
     }
     if (d.equals) {
@@ -263,8 +270,9 @@ export const BODY_RULES: BodyRule[] = [
     //   字符串体。逐条对 octo-loop-module packages/dmloop/src/api/*.ts 真实 payload 核实(见 dap350 §7.3)。
 
     // POST /fleet/api/v1/issues —— 新建任务 vs 子任务(CreateIssueModal → issueApi.createIssue):
-    //   顶层任务不传 parentIssueId(undefined,JSON 省略键);子任务传 parentIssueId=父 id(键存在)。
-    //   hasKeys(presence-only)判别安全:undefined 键被 JSON.stringify 省略,故仅子任务命中 182。
+    //   顶层任务不传 parentIssueId(undefined,JSON 省略键),或显式传 null;子任务传 parentIssueId=父 id。
+    //   hasKeys 判别经 P2#1 加固:undefined 键被 JSON.stringify 省略、显式 null/undefined 也按「不存在」处理,
+    //   故 { parent_issue_id: null } 落兜底 task_created,仅带真实父 id 的子任务命中 task_subtask_created。
     {
         method: 'POST',
         path: '/fleet/api/v1/issues',

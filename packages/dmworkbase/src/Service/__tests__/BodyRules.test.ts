@@ -169,6 +169,28 @@ describe('BODY_RULES — fleet(Loop)body 键通道真实命中', () => {
         expect(computeBodyEvent(idx, 'POST', '/fleet/api/v1/issues', j({ title: 'x' }))).toBe('task_created')
         // undefined 键被 JSON.stringify 省略,presence 判别不误命中。
         expect(computeBodyEvent(idx, 'POST', '/fleet/api/v1/issues', j({ title: 'x', parent_issue_id: undefined }))).toBe('task_created')
+        // 显式 null 值(前端以 { parent_issue_id: null } 表示「无父」)按「键不存在」处理(P2#1 加固):
+        //   JSON.stringify 保留该键,若只看 presence 会误命中 task_subtask_created;加固后落兜底 task_created。
+        expect(computeBodyEvent(idx, 'POST', '/fleet/api/v1/issues', j({ title: 'x', parent_issue_id: null }))).toBe('task_created')
+    })
+
+    it('hasKeys 空值加固:显式 null/undefined 顶层键按「不存在」处理(P2#1)', () => {
+        // 通用回归:任一 hasKeys 判别子,键存在但值为 null/undefined 时不命中;有兜底则落兜底,无兜底则 undefined。
+        const rules: BodyRule[] = [
+            { method: 'PUT', path: '/api/v1/x/:id', discriminators: [{ event: 'e_has', hasKeys: ['k'] }], fallbackEvent: 'e_fallback' },
+            { method: 'PUT', path: '/api/v1/y/:id', discriminators: [{ event: 'e_nofallback', hasKeys: ['k'] }] },
+        ]
+        const i = buildBodyIndex(rules)
+        // 有兜底:null/undefined 键落兜底,非空值命中。
+        expect(computeBodyEvent(i, 'PUT', '/api/v1/x/1', j({ k: null }))).toBe('e_fallback')
+        expect(computeBodyEvent(i, 'PUT', '/api/v1/x/1', j({ k: undefined }))).toBe('e_fallback')
+        expect(computeBodyEvent(i, 'PUT', '/api/v1/x/1', j({ k: 'v' }))).toBe('e_has')
+        // 无兜底:null 键 → undefined(不误命中)。
+        expect(computeBodyEvent(i, 'PUT', '/api/v1/y/1', j({ k: null }))).toBeUndefined()
+        // 空字符串 / 0 / false 是真实值,不算「不存在」,仍命中(presence 语义,不看值)。
+        expect(computeBodyEvent(i, 'PUT', '/api/v1/x/1', j({ k: '' }))).toBe('e_has')
+        expect(computeBodyEvent(i, 'PUT', '/api/v1/x/1', j({ k: 0 }))).toBe('e_has')
+        expect(computeBodyEvent(i, 'PUT', '/api/v1/x/1', j({ k: false }))).toBe('e_has')
     })
 
     it('PUT issues/:id:单键 inline patch 各归属,其余兜底=详情编辑', () => {
