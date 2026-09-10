@@ -185,7 +185,7 @@ export const TRACK_RULES: TrackRule[] = [
     { event: 'task_board_segment_switched', testid: 'loop-issue-scope-all', on: 'click' },
     { event: 'task_board_segment_switched', testid: 'loop-issue-scope-members', on: 'click' },
     { event: 'task_board_segment_switched', testid: 'loop-issue-scope-agents', on: 'click' },
-    // 168 视图切换(看板/分组/列表)—— 同上,同一事件三 testid,同「重复点」过计风险。
+    // 168 视图切换(看板/分组/列表)—— 同上,同一事件三 testid,同为 Class A 页内激活:按手势计数,重复点当前项再计一次为预期。
     { event: 'task_board_view_switched', testid: 'loop-issue-view-board', on: 'click' },
     { event: 'task_board_view_switched', testid: 'loop-issue-view-grouped', on: 'click' },
     { event: 'task_board_view_switched', testid: 'loop-issue-view-list', on: 'click' },
