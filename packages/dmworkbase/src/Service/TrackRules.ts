@@ -261,7 +261,7 @@ export const TRACK_RULES: TrackRule[] = [
     //   编辑器(EditorShell / Toolbar / DocMoreMenu):testid 均 doc-*/docs-* 自命名,全局唯一,无需 route。
     { event: 'document_tab_switched', testid: 'docs-tab-recent', on: 'click' }, // 重复点当前 tab 过计待裁(同 fleet 作用域 tab)
     { event: 'document_tab_switched', testid: 'docs-tab-mine', on: 'click' },
-    { event: 'document_comment_input_opened', testid: 'comment-bubble-start', route: '/d', on: 'click' }, // 非 doc- 前缀,route 门防误配。标准文档编辑面在 /d/:docId(docLink.ts),非同壳 /docs 列表页 → 门收 /d
+    { event: 'document_comment_input_opened', testid: 'comment-bubble-start', route: ['/d', '/ppt/d'], on: 'click' }, // 非 doc- 前缀,route 门防误配。编辑面在两个独立文档命名空间 /d/:docId(标准)+ /ppt/d/:docId(slides,documentScene.ts),非同壳文档列表页 → 门收两者(R13 B5)
     { event: 'document_forward_panel_opened', testid: 'doc-forward-btn', on: 'click' },
     { event: 'document_open_in_new_page', testid: 'doc-more-item-open-new-page', on: 'click' },
     { event: 'document_history_viewed', testid: 'doc-more-item-history', on: 'click' },
@@ -280,6 +280,6 @@ export const TRACK_RULES: TrackRule[] = [
     { event: 'document_insert_used', testid: 'doc-insert-formula-block', on: 'click' },
     { event: 'document_insert_used', testid: 'doc-insert-link', on: 'click' },
     //   画板(BoardShell,Excalidraw):151 find_on_canvas 用 Excalidraw 原生 toolbar-search(泛名),
-    //     加 route:/docs 锁定;⚠️ Cmd+F 键盘打开查找不产生对该元素的点击 → 纯委托漏键盘路径(待裁)。
-    { event: 'whiteboard_find_on_canvas', testid: 'toolbar-search', route: '/d', on: 'click' }, // 151 白板在 /d/:docId(非 /docs 列表页)
+    //     加 route:['/d','/ppt/d'] 锁定两个独立文档命名空间;⚠️ Cmd+F 键盘打开查找不产生对该元素的点击 → 纯委托漏键盘路径(待裁)。
+    { event: 'whiteboard_find_on_canvas', testid: 'toolbar-search', route: ['/d', '/ppt/d'], on: 'click' }, // 151 白板在 /d/:docId + /ppt/d/:docId(slides 出仓,不可证不可达 → 门放宽);非同壳文档列表页(R13 B5)
 ]

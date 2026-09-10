@@ -240,8 +240,9 @@ export const FETCH_RULES: FetchRule[] = [
     // 130 document_forwarded:生产恒调 batch(startDocForward→grantForwardMany→grantForwardBatch),
     //   单发 POST /docs/:id/forward-grant 生产从不调用(§9.3 G 类纠偏),故只挂 /batch 变体。
     { method: 'POST', path: '/api/v1/docs/:id/forward-grant/batch', event: 'document_forwarded' },
-    // 131 document_share_managed:MemberPanel 按需挂载,GET(打开管理成员)+PUT(改角色)+DELETE(移除)同归一事件。
-    { method: 'GET', path: '/api/v1/docs/:id/members', event: 'document_share_managed' },
+    // 131 document_share_managed:MemberPanel 的 PUT(改角色)/ DELETE(移除)两个写端点归一。
+    //   GET /docs/:id/members(打开面板拉成员列表)不在本表 —— 是「读」非「管理」动作,且真实写(PUT/DELETE)
+    //   成功后面板回读同一 GET 会二次命中 → 双计。只保留写端点,读端点按 FetchRules.ts:123 收益门剔除(R13 B4)。
     { method: 'PUT', path: '/api/v1/docs/:id/members', event: 'document_share_managed' },
     { method: 'DELETE', path: '/api/v1/docs/:id/members/:seg', event: 'document_share_managed' },
     { method: 'GET', path: '/api/v1/docs/:id/export/file', event: 'document_exported' },
