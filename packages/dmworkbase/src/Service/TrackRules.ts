@@ -174,15 +174,10 @@ export const TRACK_RULES: TrackRule[] = [
     { event: 'task_create_dialog_opened', testid: 'loop-sidebar-new-issue', on: 'click' }, // 164 侧栏
     { event: 'task_create_dialog_opened', testid: 'loop-issue-board-new-issue', on: 'click' }, // 164 工具栏
     { event: 'task_create_dialog_opened', testid: 'loop-issue-board-empty-new-issue', on: 'click' }, // 164 空态
-    { event: 'my_tasks_viewed', testid: 'loop-sidebar-tab-myloop', on: 'click' }, // 163
-    { event: 'task_board_viewed', testid: 'loop-sidebar-tab-issue', on: 'click' }, // 166
-    { event: 'project_module_entered', testid: 'loop-sidebar-tab-project', on: 'click' }, // 186
-    { event: 'automation_module_entered', testid: 'loop-sidebar-tab-automation', on: 'click' }, // 201
-    // 222/243:专家/专家团经 workspaceTabs 侧栏 tab 进入(item.key=agent/squad),实际渲染元素即
-    //   loop-sidebar-tab-agent/squad;工作表原写 loop-nav-* 与实际约定不符 → 校正为实际 testid。
-    { event: 'expert_module_entered', testid: 'loop-sidebar-tab-agent', on: 'click' }, // 222
-    { event: 'expert_team_module_entered', testid: 'loop-sidebar-tab-squad', on: 'click' }, // 243
-    { event: 'workspace_settings_opened', testid: 'loop-sidebar-tab-settings', on: 'click' }, // 259
+    // 163/166/186/201/222/243/259 —— 侧栏 tab 切换(myloop/issue/project/automation/agent/squad/settings)
+    //   的 module_entered/viewed 系列**不走本表**:DOM 委托无法表达 !reentry 去重(重复点当前 tab 会重发,
+    //   Dap.track 无去重),这正是 apps_module_entered 移出的同一原因(评审 R6 P1)。改由 loop 侧命令式发射 ——
+    //   见 dmloop useLoopWorkspace.openTab 的 `if (key !== tab)` 门(七事件一次映射)。
     // 167 作用域 tab(全部/成员/专家)—— 同一事件三 testid。⚠️「重复点当前 tab」经 DOM 委托会再计一次
     //     (同 octo-web market_tab_switched 的过计),已向 owner 标注待裁,暂按工作表 dom-testid。
     { event: 'task_board_segment_switched', testid: 'loop-issue-scope-all', on: 'click' },
@@ -246,8 +241,8 @@ export const TRACK_RULES: TrackRule[] = [
     //     命令式(runtime_install_command_copied、skill_searched、skill_create_method_switched、
     //     skill_created[runtime 分支]、skill_create_failed、skill_file_added、skill_edit_preview_toggled)
     //     在源码内 track,不进本表。268/273/276 跳过(宿主壳/无 polling 信号)。278 create-btn 头部+空态同 testid。
-    { event: 'runtime_tab_viewed', testid: 'dmpersonal-tab-runtime', on: 'click' },
-    { event: 'skills_tab_viewed', testid: 'dmpersonal-tab-skill', on: 'click' },
+    //     runtime_tab_viewed/skills_tab_viewed 同样移出本表:侧栏 tab 切换需 !reentry 去重,DOM 委托表达不了
+    //     (重复点当前 tab 会重发)—— 改由 dmpersonal usePersonalWorkspace.openTab 的 `if (key !== tab)` 门命令式发射(评审 R6 P1)。
     { event: 'runtime_add_computer_dialog_opened', testid: 'runtime-add-computer-btn', on: 'click' },
     { event: 'runtime_machine_rename_dialog_opened', testid: 'runtime-rename-btn', on: 'click' },
     { event: 'skill_create_dialog_opened', testid: 'skill-create-btn', on: 'click' }, // 头部+空态同 testid
@@ -257,7 +252,8 @@ export const TRACK_RULES: TrackRule[] = [
     // ---- doc(octo-docs-module,@octo/docs):源直编入本 bundle(同 fleet),Dap 全局委托可命中。
     //      testid 由 docs 源码挂(src/editor、src/board)。命令式事件(document_edited/format_applied/
     //      slash_command_used/comment_panel_opened + 全部 whiteboard_* + 全部 table_*)在 docs 源码内
-    //      Dap.track,不进本表。doc 视图统一在 /docs 路由下渲染(编辑器/表格/画板非独立 route)。
+    //      Dap.track,不进本表。编辑器/表格/画板渲染在两个独立文档命名空间 /d/:docId(标准)+
+    //      /ppt/d/:docId(slides,documentScene.ts),非同壳 /docs 列表页 → 泛名 testid 用 route 门锁定(见 :264/:284)。
     //   编辑器(EditorShell / Toolbar / DocMoreMenu):testid 均 doc-*/docs-* 自命名,全局唯一,无需 route。
     { event: 'document_tab_switched', testid: 'docs-tab-recent', on: 'click' }, // 重复点当前 tab 过计待裁(同 fleet 作用域 tab)
     { event: 'document_tab_switched', testid: 'docs-tab-mine', on: 'click' },

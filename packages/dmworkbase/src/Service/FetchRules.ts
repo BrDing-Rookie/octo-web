@@ -283,35 +283,30 @@ export const FETCH_RULES: FetchRule[] = [
     //     无专属端点,切工作区后续的 GET /issues 等仅是列表 reload(见下,不再映射事件),退各仓 UI(选工作区 onClick 命令式)。
     // A1 工作区
     { method: 'POST', path: '/fleet/api/v1/workspaces', event: 'workspace_created' },
-    // A2/A3 任务板:task_board_filtered 从 path 通道移除 —— GET /issues、/issues/grouped、/issues/search
-    //   都是任务板的列表加载/reload 端点(进板即拉、切 scope/view 每次重拉、增删改后刷新),一次手势即触发;
-    //   把「筛选」意图钉在 reload GET 上会与 task_board_viewed 双发、且指标被非筛选流量淹没(评审 B2/Octo-Q P1)。
-    //   与本文件既有先例(settings_secrets_opened、apps_module_entered 均移出 fetch)一致:精确到筛选/搜索
-    //   手势的 task_board_filtered 改由 loop 侧命令式发射(B-loop fast-follow),故此处不再挂 path 规则。
-    //   grouped/search 为字面段,仍需 FETCH_IGNORE 压过 /issues/:id(task_opened),否则列表加载会误报 task_opened。
-    { method: 'GET', path: '/fleet/api/v1/issues/grouped', event: FETCH_IGNORE },
-    { method: 'GET', path: '/fleet/api/v1/issues/search', event: FETCH_IGNORE },
-    { method: 'GET', path: '/fleet/api/v1/issues/:id', event: 'task_opened' },
+    // A2/A3 任务板:进板浏览(task_board_viewed)、筛选(task_board_filtered)、开单详情(task_opened)三者
+    //   都无法在 path 通道正确表达 —— GET /issues、/issues/grouped、/issues/search 都是列表加载/reload 端点
+    //   (进板即拉、切 scope/view 每次重拉、增删改后刷新),而 GET /issues/:id 无法区分「用户点开」与「列表预取/轮询」;
+    //   Dap.track 无去重,挂 path 会双发并被 reload 流量淹没(评审 R6 P1)。三者统一改由 loop 侧命令式发射
+    //   (task_board_viewed 见 dmloop openTab 的 !reentry 门、task_opened 见 IssuePage.openDetail;
+    //   task_board_filtered 为 B-loop 先例),与本文件既有先例(settings_secrets_opened、apps_module_entered
+    //   均移出 fetch)一致。故 /issues 全系不再挂 path 规则 —— task_opened 移除后 /issues/grouped、/issues/search
+    //   不再有 :id 通配需要压制,原 FETCH_IGNORE 一并删除。
     { method: 'POST', path: '/fleet/api/v1/issues/:id/comments', event: 'task_commented' },
     { method: 'DELETE', path: '/fleet/api/v1/issues/:id', event: 'task_deleted' },
     // B 项目
     { method: 'POST', path: '/fleet/api/v1/projects', event: 'project_created' },
-    { method: 'GET', path: '/fleet/api/v1/projects/:id', event: 'project_opened' },
     { method: 'DELETE', path: '/fleet/api/v1/projects/:id', event: 'project_deleted' },
     // C 自动化
     { method: 'POST', path: '/fleet/api/v1/autopilots', event: 'automation_created' },
-    { method: 'GET', path: '/fleet/api/v1/autopilots/:id', event: 'automation_opened' },
     { method: 'DELETE', path: '/fleet/api/v1/autopilots/:id', event: 'automation_deleted' },
     { method: 'POST', path: '/fleet/api/v1/autopilots/:id/trigger', event: 'automation_run_manually' },
     { method: 'POST', path: '/fleet/api/v1/autopilots/:id/triggers', event: 'automation_trigger_added' },
     { method: 'DELETE', path: '/fleet/api/v1/autopilots/:id/triggers/:id', event: 'automation_trigger_deleted' },
     // D 专家
     { method: 'POST', path: '/fleet/api/v1/agents', event: 'expert_created' },
-    { method: 'GET', path: '/fleet/api/v1/agents/:id', event: 'expert_opened' },
     { method: 'POST', path: '/fleet/api/v1/agents/:id/restore', event: 'expert_unarchived' },
     // E 专家团
     { method: 'POST', path: '/fleet/api/v1/squads', event: 'expert_team_created' },
-    { method: 'GET', path: '/fleet/api/v1/squads/:id', event: 'expert_team_opened' },
     { method: 'DELETE', path: '/fleet/api/v1/squads/:id/members', event: 'expert_team_member_removed' },
     // F 工作区设置
     { method: 'PATCH', path: '/fleet/api/v1/workspaces/:id', event: 'workspace_general_saved' },
@@ -322,7 +317,6 @@ export const FETCH_RULES: FetchRule[] = [
     { method: 'PATCH', path: '/fleet/api/v1/runtimes/:id', event: 'runtime_machine_renamed' },
     // 280 skill_runtime_skills_pulled:只挂 POST(受理),GET /local-skills/:id 是 900ms 轮询、pending 亦 2xx,勿计。
     { method: 'POST', path: '/fleet/api/v1/runtimes/:id/local-skills', event: 'skill_runtime_skills_pulled' },
-    { method: 'GET', path: '/fleet/api/v1/skills/:id', event: 'skill_opened' },
     { method: 'PUT', path: '/fleet/api/v1/skills/:id', event: 'skill_saved' },
     { method: 'DELETE', path: '/fleet/api/v1/skills/:id', event: 'skill_deleted' },
     // 281 skill_created:local(POST /skills)/web(POST /skills/import)是干净同步 path-rule;

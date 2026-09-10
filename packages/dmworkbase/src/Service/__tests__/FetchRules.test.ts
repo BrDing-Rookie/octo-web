@@ -190,6 +190,15 @@ describe('FETCH_RULES — 「请求成功 ≠ 用户动作」的语义边界(负
             'group_avatar_edited',                 // POST /groups/:id/avatar 建群上传也命中 → ChannelAvatar 编辑分支命令式
             'settings_secrets_opened',             // GET /manager/secrets 列表加载(删除/保存/重试重拉)→ 面板挂载命令式
             'settings_voice_toggled',              // settings center voice toggle/consent handlers
+            // ↓ dap350 R6:六个 fleet *_opened 从 fetch 通道移出 —— GET /:id 分不清「用户点开」与
+            //   「列表预取/详情轮询/深链预热」,Dap.track 无去重会双计(评审 R6 P1-2)。改由 loop 侧
+            //   各页 openDetail 命令式发射(contact_opened 同款处理),故永不得再回 FETCH_RULES。
+            'task_opened',                         // dmloop IssuePage.openDetail
+            'project_opened',                      // dmloop ProjectPage.openDetail
+            'automation_opened',                   // dmloop AutomationPage.openDetail
+            'expert_opened',                       // dmloop AgentPage.openDetail
+            'expert_team_opened',                  // dmloop SquadPage.openDetail
+            'skill_opened',                        // dmloop SkillPage.openDetail
         ])
         const leaked = FETCH_RULES.filter((r) => uiOnly.has(r.event)).map((r) => `${r.method} ${r.path} → ${r.event}`)
         expect(leaked, leaked.join('\n')).toEqual([])
@@ -376,23 +385,25 @@ describe('FETCH_RULES — 十二审 🔴 五类「2xx ≠ 用户动作(且成功
 describe('FETCH_RULES — fleet(Loop)path 通道(T1 同窗内嵌,/fleet/api/v1/*)', () => {
     const idx = buildFetchIndex(FETCH_RULES)
 
-    it('任务板 / 任务::id 打开;列表加载 GET (issues / grouped / search) 不再映射 task_board_filtered', () => {
-        // task_board_filtered 已移出 path 通道(reload GET 表达不了筛选意图,改 loop 侧命令式);
-        // /issues 无 :id 同段冲突 → 直接无映射;/grouped、/search 为字面段,挂 FETCH_IGNORE 压过 :id,不误报 task_opened。
+    it('任务板列表 GET (issues / grouped / search) 与详情 GET /issues/:id 均不再映射(改 loop 命令式)', () => {
+        // task_board_viewed / task_board_filtered / task_opened 全部移出 path 通道(评审 R6 P1):
+        //   reload GET 表达不了浏览/筛选意图,GET /issues/:id 分不清「点开」与「列表预取/轮询」;
+        //   三者改由 loop 侧命令式发射(见 dmloop openTab / IssuePage.openDetail)。task_opened 移除后
+        //   /grouped、/search 不再有 :id 通配需压制,原 FETCH_IGNORE 一并删除 → 三端点自然无映射。
         expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues')).toBeUndefined()
         expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/grouped')).toBeUndefined()
         expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/search')).toBeUndefined()
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/i123')).toBe('task_opened')
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/issues/i123')).toBeUndefined()
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/issues/i123/comments')).toBe('task_commented')
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/issues/i123')).toBe('task_deleted')
     })
 
-    it('项目 / 自动化 CRUD + trigger vs triggers 字面消歧', () => {
+    it('项目 / 自动化 CRUD + trigger vs triggers 字面消歧(*_opened 已移出 → 仅 create/delete)', () => {
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/projects')).toBe('project_created')
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/projects/p1')).toBe('project_opened')
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/projects/p1')).toBeUndefined()
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/projects/p1')).toBe('project_deleted')
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/autopilots')).toBe('automation_created')
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/autopilots/a1')).toBe('automation_opened')
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/autopilots/a1')).toBeUndefined()
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/autopilots/a1')).toBe('automation_deleted')
         // 手动运行(trigger,单数)vs 新增触发器(triggers,复数):字面段区分。
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/autopilots/a1/trigger')).toBe('automation_run_manually')
@@ -400,12 +411,12 @@ describe('FETCH_RULES — fleet(Loop)path 通道(T1 同窗内嵌,/fleet/api/v1/*
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/autopilots/a1/triggers/t1')).toBe('automation_trigger_deleted')
     })
 
-    it('专家 / 专家团 / 工作区设置 / skill', () => {
+    it('专家 / 专家团 / 工作区设置 / skill(*_opened 已移出 → 详情 GET 不映射)', () => {
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/agents')).toBe('expert_created')
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/agents/ag1')).toBe('expert_opened')
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/agents/ag1')).toBeUndefined()
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/agents/ag1/restore')).toBe('expert_unarchived')
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/squads')).toBe('expert_team_created')
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/squads/s1')).toBe('expert_team_opened')
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/squads/s1')).toBeUndefined()
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/squads/s1/members')).toBe('expert_team_member_removed')
         expect(matchFetchEvent(idx, 'PATCH', '/fleet/api/v1/workspaces/w1')).toBe('workspace_general_saved')
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/workspaces/w1/octo-members')).toBe('workspace_member_added')
@@ -413,7 +424,7 @@ describe('FETCH_RULES — fleet(Loop)path 通道(T1 同窗内嵌,/fleet/api/v1/*
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/workspaces/w1/members/m1')).toBe('workspace_member_removed')
         expect(matchFetchEvent(idx, 'PATCH', '/fleet/api/v1/runtimes/r1')).toBe('runtime_machine_renamed')
         expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/runtimes/r1/local-skills')).toBe('skill_runtime_skills_pulled')
-        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/skills/sk1')).toBe('skill_opened')
+        expect(matchFetchEvent(idx, 'GET', '/fleet/api/v1/skills/sk1')).toBeUndefined()
         expect(matchFetchEvent(idx, 'PUT', '/fleet/api/v1/skills/sk1')).toBe('skill_saved')
         expect(matchFetchEvent(idx, 'DELETE', '/fleet/api/v1/skills/sk1')).toBe('skill_deleted')
         // 281 local/web 两端点同一事件。
