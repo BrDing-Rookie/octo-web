@@ -107,11 +107,11 @@ describe("interpretForwardResult — edge cases", () => {
     })
 })
 
-// shouldEmitDocForwarded 决定 document_forwarded(DAP)是否发射。这是 Octo-Q head 86c932a5 🔴 的修复面:
+// shouldEmitDocForwarded 决定 document_forwarded(DAP)是否发射。这是 Octo-Q 🔴 的**predicate 层** pin:
 // runDocForward 被文档卡片分享(shareAsCard===true,应计)与 html-doc「让 AI 处理」AI 指令转发
 // (shareAsCard 未设,不应计)共用,ungated 发射会把指令转发折进 document_forwarded → 漏斗分子虚高。
-// 这些用例是该语义唯一在跑的 pin(WKBase.helpers.test.tsx 因 @octo/chat-react 整文件 0 test 不执行),
-// 删掉门 / 反向门 / 去掉 shareAsCard 判定都能被杀。
+// 注:**predicate↔emission 的 wiring**(call site 真的用了这个门、且真的发 document_forwarded)由
+// WKBase.helpers.test.tsx 的 "emission wiring" 用例钉死(那个 harness 在跑);此处只钉纯函数真值表。
 describe("shouldEmitDocForwarded — 仅分享流(shareAsCard===true)且送达成功才发", () => {
     it("正向:分享流(shareAsCard=true)送达成功(≥1)→ 发射一次", () => {
         expect(shouldEmitDocForwarded(true, "success")).toBe(true)
