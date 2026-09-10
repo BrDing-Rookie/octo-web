@@ -290,8 +290,9 @@ export const BODY_RULES: BodyRule[] = [
     //   (改父任务 patch{parent_issue_id} 也落 fallback→task_detail_edited,整合表无独立事件,可接受。)
     //   ⚠️ 判别子**首中即返**(数组序,见 discriminatorHits 调用点 computeBodyEvent),这是**显式决策**而非偶然
     //     (Octo-Q head 258e876e P2):多键 payload(跨项目拖卡带 {status,project_id},或整对象 PUT 恒带 status)
-    //     按此序归为 **status 变更** —— inline 单键 patch 是主要手势,整对象 PUT 属边界;status 优先于 priority/
-    //     project_id/assignee/detail,避免真实状态变更被 project/detail 吞掉。优先级由 BodyRules.test.ts 的
+    //     按此序归为 **status 变更** —— inline 单键 patch 是主要手势,整对象 PUT 属边界;判别子序
+    //     **status > priority > assignee > project_id > (fallback)detail**(与代码 discriminators 数组一致),
+    //     避免真实状态变更被 project/detail 吞掉。优先级由 BodyRules.test.ts 的
     //     多键 + 整对象用例钉死,改数组序即红。
     {
         method: 'PUT',
