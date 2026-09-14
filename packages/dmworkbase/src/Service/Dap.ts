@@ -367,19 +367,22 @@ class DapImpl {
             // 首次启用:惰性装采集机制(dark 态从未装过),再补扫当前 DOM。
             this.installCollectors()
             this.rescanCurrent()
-            // app_launched **不在此发**(六审 P2):首次 setEnabled(true) 由 appconfig 回调驱动
-            //   (App.tsx:502-503),而 appconfig 在**登录页(未登录、无 token)**就会拉,此处发会
-            //   逼 envelope()→deviceId() 给匿名访客写持久 localStorage 标识 + 发一条无 token 上报,
-            //   破坏 Dap.ts:255-258 的「惰性创建」保证。改由 maybeTrackLaunch() 在**登录后拿到 token、
-            //   首个真正产出的事件到来时**补发一次(整生命周期仍仅一次,launchTracked 哨兵保证)。
+            // app_launched 双触发之一(setEnabled 首启)+ emit()。此处 maybeTrackLaunch() 在采集开启
+            //   瞬间即锚定:token 门保证匿名(登录页无 token,appconfig 由 App.tsx 回调在未登录态就拉)
+            //   时为纯 no-op —— 不写 device_id、不发无 token 上报,惰性创建保证不破;登录态冷启动
+            //   (setEnabled 时 token 已就绪)则立即锚定一次,不依赖任何后续第一方请求 / 点击 / page_view
+            //   (覆盖独立 bounce 页在 wrapper 安装前即完成其请求、此后无事件的会话)。若 token 晚于
+            //   setEnabled 到达则此处 no-op,由 emit() 接手补发。launchTracked 哨兵保证整生命周期仅一次。
+            this.maybeTrackLaunch()
         }
     }
 
     /**
      * app_launched 惰性补发(六审 P2 / owner 决策 b):登录(currentToken 有值)后、采集开启、
-     * 且首个真正 track 到来时发一次「应用启动」。放在 track() 顶部——匿名登录页无 token 时不发,
-     * 从而不写 device_id、不产生无 token 上报;登录后首个鉴权事件(通常是页面进入 / 映射事件)
-     * 触发它,并排在该事件之前。launchTracked 哨兵保证整生命周期仅一次(停采→再启用亦不重复)。
+     * 且首个补发触发点到来时发一次「应用启动」。三个调用点共用本方法:setEnabled(true) 首启、
+     * emit()(任意已完成的第一方请求)、track()/pageView() 顶部——匿名登录页无 token 时不发,
+     * 从而不写 device_id、不产生无 token 上报;登录后首个命中的触发点补发一次,并排在其事件之前。
+     * launchTracked 哨兵保证整生命周期仅一次(停采→再启用亦不重复)。
      */
     private maybeTrackLaunch(): void {
         if (this.launchTracked) return
@@ -989,6 +992,11 @@ class DapImpl {
                 if (!rawUrl) return
                 // 只采第一方(同源)API telemetry:跨域(预签名对象存储/第三方)路径含对象键/文件名,一律不采
                 if (!isFirstParty(rawUrl)) return
+                // app_launched 双触发之二(emit)。任意已完成的第一方请求(含 token 晚于 setEnabled 到达
+                //   的会话:此前 A 因无 token 是 no-op,此处接手)也锚定 app_launched。无视 status —— 非 abort
+                //   的失败(见下 .catch / onLoadEnd 以 status 0 / 4xx-5xx 进 emit)同样锚定;token 门保证匿名
+                //   仍不发。abort 不进 emit,故不锚定。launchTracked 哨兵保证与 A / track / pageView 合计仅一次。
+                this.maybeTrackLaunch()
                 const m = (method || 'GET').toUpperCase()
                 // 中央映射(①path / ②body):仅在 **2xx**(动作确已发生)时补发一条映射事件。
                 // body 键通道优先(更具体);其次 path 通道。映射事件不带任何来自请求的值
@@ -1033,7 +1041,8 @@ class DapImpl {
                     })
                     .catch((err) => {
                         // 被取消的请求不是失败:搜索每次按键都会 abort 在途请求(APIClient 的
-                        // AbortSignal 即为此)。取消不入 emit;仅真实网络失败才交给 emit(见 PR review P1-2)。
+                        // AbortSignal 即为此)。取消不入 emit;非 abort 的真实网络失败仍进 emit ——
+                        // 现由 emit 内的 maybeTrackLaunch() 锚定 app_launched(不再产 http_request)。
                         if (!isAbortError(err)) emit(url, method || 'GET', 0)
                         throw err
                     })
