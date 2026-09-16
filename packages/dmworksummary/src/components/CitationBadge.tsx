@@ -246,7 +246,9 @@ function JumpLink({ citation, badgeKey, closeKey }: { citation: CitationItem; ba
             <span style={{ fontSize: 12, fontWeight: 400, lineHeight: '20px', color: 'rgba(28, 28, 35, 0.4)', cursor: 'pointer' }}
                 onClick={(e) => {
                     e.stopPropagation();
-                    // DAP-218 M11：从引用预览「跳转到原文」手势;props 留空。
+                    // DAP-218 M11：从引用预览「跳转到原文」手势。
+                    // DAP-266：spec 仅 summary_id；JumpLink 为引用叶子组件，summary_id 需穿透 CitationText
+                    //   渲染管线(9+ 处) plumb → 非就近，DEFER。
                     Dap.shared.track("smart_summary_reference_jumped", {});
                     closeKey(badgeKey);
                     let channelId = citation.channel_id!;
@@ -275,7 +277,7 @@ function JumpLink({ citation, badgeKey, closeKey }: { citation: CitationItem; ba
  * Click pins the popover (survives mouseleave), click again unpins. Hover
  * shows a temporary preview that fades on mouseleave.
  */
-function useHoverPin(pinned: boolean) {
+function useHoverPin(pinned: boolean, refCount?: number) {
     const [hovering, setHovering] = useState(false);
     const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -289,11 +291,15 @@ function useHoverPin(pinned: boolean) {
         if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
         if (hovering || pinned) return;
         openTimer.current = setTimeout(() => {
-            // DAP-218 M11：引用悬停预览真正展开(经 HOVER_OPEN_DELAY_MS 延迟)时发;props 留空。
-            Dap.shared.track("smart_summary_reference_hovered", {});
+            // DAP-218 M11：引用悬停预览真正展开(经 HOVER_OPEN_DELAY_MS 延迟)时发。
+            // DAP-266：补 ref_count（引用总条数,调用方经参数传入）。summary_id 为引用叶子组件,
+            //   需穿透 CitationText 渲染管线(9+ 处) plumb → 非就近,DEFER。
+            Dap.shared.track("smart_summary_reference_hovered", {
+                ...(refCount != null ? { ref_count: refCount } : {}),
+            });
             setHovering(true);
         }, HOVER_OPEN_DELAY_MS);
-    }, [hovering, pinned]);
+    }, [hovering, pinned, refCount]);
 
     const onMouseLeave = useCallback(() => {
         if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; }
@@ -315,7 +321,7 @@ const CitationBadge: React.FC<CitationBadgeProps> = ({ index, displayIndex, cita
     const shownIndex = displayIndex ?? index;
 
     const pinned = activeKey === badgeKey;
-    const { visible, onMouseEnter, onMouseLeave } = useHoverPin(pinned);
+    const { visible, onMouseEnter, onMouseLeave } = useHoverPin(pinned, citations.length);
 
     // Document-level Escape: works regardless of focus (e.g. after clicking jump link)
     useEffect(() => {
@@ -396,13 +402,13 @@ const CitationBadge: React.FC<CitationBadgeProps> = ({ index, displayIndex, cita
                 onMouseLeave={onMouseLeave}
                 onClick={() => {
                     // DAP-218 M11：点击引用角标「展开」预览时发(仅展开边,再点收起不计);props 留空。
-                    if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                    if (!pinned) Dap.shared.track("smart_summary_reference_clicked", { ref_count: citations.length });
                     onBadgeClick(badgeKey);
                 }}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                        if (!pinned) Dap.shared.track("smart_summary_reference_clicked", { ref_count: citations.length });
                         onBadgeClick(badgeKey);
                     }
                     if (e.key === 'Escape' && pinned) { e.preventDefault(); closeKey(badgeKey); }
@@ -431,7 +437,7 @@ export const CitationGroupBadge: React.FC<CitationGroupBadgeProps> = ({ indices,
     }, [indicesKey, displayIndices?.join(',')]);
 
     const pinned = activeKey === badgeKey;
-    const { visible, onMouseEnter, onMouseLeave } = useHoverPin(pinned);
+    const { visible, onMouseEnter, onMouseLeave } = useHoverPin(pinned, citations.length);
 
     // Document-level Escape: works regardless of focus (e.g. after clicking jump link)
     useEffect(() => {
@@ -539,13 +545,13 @@ export const CitationGroupBadge: React.FC<CitationGroupBadgeProps> = ({ indices,
                 onMouseLeave={onMouseLeave}
                 onClick={() => {
                     // DAP-218 M11：点击引用角标「展开」预览时发(仅展开边,再点收起不计);props 留空。
-                    if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                    if (!pinned) Dap.shared.track("smart_summary_reference_clicked", { ref_count: citations.length });
                     onBadgeClick(badgeKey);
                 }}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                        if (!pinned) Dap.shared.track("smart_summary_reference_clicked", { ref_count: citations.length });
                         onBadgeClick(badgeKey);
                     }
                     if (e.key === 'Escape' && pinned) { e.preventDefault(); closeKey(badgeKey); }
