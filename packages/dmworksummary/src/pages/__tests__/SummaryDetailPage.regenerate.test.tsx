@@ -14,6 +14,7 @@ vi.mock("@octo/base", async () => ({
     t: (key: string) => key,
     ForwardService: {},
     interpretForwardResult: vi.fn(),
+    Dap: { shared: { track: vi.fn() } },
     I18nContext: React.createContext({ t: (key: string) => key }),
 }));
 vi.mock("@octo/base/src/Components/VoiceInputButton", () => ({

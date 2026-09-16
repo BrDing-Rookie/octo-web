@@ -1358,7 +1358,9 @@ export async function addMembers(taskId: number, userIds: string[]): Promise<voi
 // 退出多人协作（参与者，非 creator）。后端物理删除调用者的
 // participant + personal_result 行，并重算团队总结（meta_summary）。
 export async function leaveSummary(taskId: number): Promise<void> {
-    return post(`/summaries/${taskId}/leave`);
+    // DAP-218 M11：参与者「退出协作」成功(code===0)命令式发 smart_summary_member_exited;
+    //   与 smart_summary_member_removed（creator 移除）语义不同、事件独立;props 留空。
+    return post(`/summaries/${taskId}/leave`, undefined, 'smart_summary_member_exited');
 }
 
 // creator 移除某成员。后端物理删除该成员的 participant + personal_result
@@ -1404,7 +1406,11 @@ export async function acceptInvitation(taskId: number): Promise<void> {
 }
 
 export async function respondToTask(taskId: number, action: 'accept' | 'reject'): Promise<void> {
-    return post(`/summaries/${taskId}/respond`, { action });
+    // DAP-218 M11：应答邀请成功(code===0)命令式发。accept→smart_summary_invite_accepted、
+    //   reject→smart_summary_invite_rejected;卡片(SummaryCard onRespond)与详情页(handleRespondToTask)
+    //   均汇入本 api 函数,单一收口天然去重;props 留空。
+    return post(`/summaries/${taskId}/respond`, { action },
+        action === 'accept' ? 'smart_summary_invite_accepted' : 'smart_summary_invite_rejected');
 }
 
 // ─── Personal Results ──────────────────────────────────
@@ -1414,7 +1420,8 @@ export async function getPersonalResult(taskId: number): Promise<PersonalResult>
 }
 
 export async function submitPersonalResult(taskId: number): Promise<void> {
-    return post(`/summaries/${taskId}/submit`);
+    // DAP-218 M11：提交「我的报告」成功(code===0)命令式发 smart_summary_my_report_submitted;props 留空。
+    return post(`/summaries/${taskId}/submit`, undefined, 'smart_summary_my_report_submitted');
 }
 
 export async function getMembers(taskId: number): Promise<MemberStatus[]> {
@@ -1457,9 +1464,11 @@ export async function updateMyTopicTemplate(
     templateId: string,
     payload: CustomTopicTemplatePayload,
 ): Promise<TopicTemplate> {
+    // DAP-218 M11：编辑「预置模板」的个人覆盖成功(code===0)命令式发 smart_summary_preset_template_edited;props 留空。
     const data = await put<{ template: TopicTemplate }>(
         `/summary-templates/${encodeURIComponent(templateId)}/my`,
         payload,
+        'smart_summary_preset_template_edited',
     );
     return data.template;
 }
@@ -1482,15 +1491,18 @@ export async function updateCustomTopicTemplate(
     templateId: string,
     payload: CustomTopicTemplatePayload,
 ): Promise<TopicTemplate> {
+    // DAP-218 M11：编辑「自定义模板」成功(code===0)命令式发 smart_summary_custom_template_edited;props 留空。
     const data = await put<{ template: TopicTemplate }>(
         `/summary-templates/my/${encodeURIComponent(templateId)}`,
         payload,
+        'smart_summary_custom_template_edited',
     );
     return data.template;
 }
 
 export async function deleteCustomTopicTemplate(templateId: string): Promise<void> {
-    return del(`/summary-templates/my/${encodeURIComponent(templateId)}`);
+    // DAP-218 M11：删除「自定义模板」成功(code===0)命令式发 smart_summary_custom_template_deleted;props 留空。
+    return del(`/summary-templates/my/${encodeURIComponent(templateId)}`, 'smart_summary_custom_template_deleted');
 }
 
 export async function inferScope(topic: string): Promise<InferResult> {
@@ -1538,10 +1550,12 @@ export async function deleteSchedule(scheduleId: number): Promise<void> {
 }
 
 export async function toggleSchedule(scheduleId: number, isActive: boolean): Promise<ScheduleItem> {
+    // DAP-218 M11：仅「关闭定时」(isActive===false) 成功(code===0)命令式发 smart_summary_timer_disabled;
+    //   重新开启不发(无对应注册事件);props 留空。
     return normalizeScheduleItem(
         await put<ScheduleItem>(`/summary-schedules/${scheduleId}/toggle`, {
             is_active: isActive,
-        }),
+        }, isActive ? undefined : 'smart_summary_timer_disabled'),
     );
 }
 
@@ -1549,7 +1563,10 @@ export async function toggleSchedule(scheduleId: number, isActive: boolean): Pro
 // 里置 confirmed=true（后端处理）。语义是「确认这个定时任务，确认一次后续
 // 每轮免确认」，不是确认某一轮 task。
 export async function confirmSchedule(scheduleId: number): Promise<void> {
-    return post(`/summary-schedules/${scheduleId}/confirm`);
+    // DAP-218 M11：定时总结「一次性参与确认」成功(code===0)命令式发
+    //   smart_summary_recurring_participation_confirmed;props 留空。
+    return post(`/summary-schedules/${scheduleId}/confirm`, undefined,
+        'smart_summary_recurring_participation_confirmed');
 }
 
 // ─── Candidate Selection ───────────────────────────────

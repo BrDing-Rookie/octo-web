@@ -1510,6 +1510,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
     handleRetry = async () => {
         const { detail } = this.state;
         if (!detail || this.taskId == null) return;
+        // DAP-218 M11：点击「重试」手势;与底层 regenerate 漏斗事件语义不同,独立计数;props 留空。
+        Dap.shared.track("smart_summary_retried", {});
         if (detail.trigger_type === TriggerType.AGENT) {
             if (!supportsGenerationConfig(detail)) {
                 Toast.error(t("summary.generation.serviceUpgradeRequired"));
@@ -2460,6 +2462,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         const { detail } = this.state;
         if (!detail) return;
         if (!this.canRefineCurrentDetail()) return;
+        // DAP-218 M11：点击「继续优化」手势;props 留空。
+        Dap.shared.track("smart_summary_continue_refine_clicked", {});
         const referenceTask = {
             task_id: detail.task_id,
             title: detail.title,
@@ -3027,6 +3031,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
             const ok = await copyToClipboard(content);
             if (this.unmounted) return;
             if (ok) {
+                // DAP-218 M11：复制总结内容成功;props 留空。
+                Dap.shared.track("smart_summary_copied", {});
                 Toast.success(this.context.t("summary.detail.copySuccess"));
             } else {
                 Toast.error(this.context.t("summary.detail.copyFailed"));
@@ -3084,6 +3090,9 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                     response: { data: { error: "create_unconfirmed" } },
                 });
             }
+            // DAP-218 M11：转在线文档成功(后端已创建、链接校验通过)命令式发;props 留空。
+            //   收口在唯一成功点,覆盖 client/web-popup/被拦 三种打开分支,只计一次。
+            Dap.shared.track("smart_summary_converted_to_doc", {});
             if (hostOpener) {
                 const openDocument = hostOpener;
                 // Client 模式：宿主侧导航；失败时不展示"创建失败"，创建已成功。
@@ -4472,6 +4481,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                                     if (this.state.versionPanelOpen) {
                                         this.handleCloseVersionPanel();
                                     } else {
+                                        // DAP-218 M11：打开「版本历史」面板手势;props 留空。
+                                        Dap.shared.track("smart_summary_version_history_opened", {});
                                         this.setState({ versionPanelOpen: true });
                                     }
                                 }}

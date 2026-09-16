@@ -1025,6 +1025,8 @@ export default class SummaryCreatePage extends Component<
                         onClick={(e) => {
                             // 阻止事件冒泡触发卡片 onClick (toggle SidePanel)
                             e.stopPropagation();
+                            // DAP-218 M11：移除 Agent 会话引用的历史总结手势(与 added 成对);props 留空。
+                            Dap.shared.track("smart_summary_agent_reference_removed", {});
                             // 移除引用同时强制关闭 SidePanel(引用没了没意义再显示)
                             this.setState({ referencedTask: null, sidePanelOpen: false });
                             // 引用同步清持久化，避免 refresh 后又回填。
