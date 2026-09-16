@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { Empty, Modal, Spin } from "@douyinfe/semi-ui";
 import { Plus } from "lucide-react";
+import { Dap } from "@octo/base";
 import * as summaryApi from "../api/summaryApi";
 import type { SummaryWorkbenchTemplateScope } from "../bridge/summaryWorkbench/protocol";
 import {
@@ -244,6 +245,10 @@ export default function TemplateSelectorModal({
     setEditingLabel("");
     setEditingDescription("");
     setMutationError("");
+    // 已达上限时上面已 return,入口不可见不触发;guard 通过、弹窗进入创建态才计一次。
+    Dap.shared.track("smart_summary_custom_template_create_opened", {
+      template_count_before: customTemplates.length,
+    });
   };
 
   const startEditing = (template: TopicTemplate) => {
@@ -253,6 +258,12 @@ export default function TemplateSelectorModal({
     setEditingLabel(editable.label);
     setEditingDescription(editable.description);
     setMutationError("");
+    // 预设模板卡「编辑」弹窗成功打开时上报;自定义模板编辑不计入本事件(spec 限定预设)。
+    if (!template.is_custom) {
+      Dap.shared.track("smart_summary_preset_template_edit_opened", {
+        template_name: template.label,
+      });
+    }
   };
 
   const closeEditor = () => {
