@@ -103,6 +103,24 @@ const ChannelSearchPanel: React.FC<ChannelSearchPanelProps> = ({
   const closeFilterPopover = useCallback(() => {
     setFilterOpen(false);
   }, []);
+  const handleApplyFilters = useCallback(
+    (next: ChannelSearchFilters) => {
+      // channel_search_filtered(DAP-218 A 类):在筛选面板「确定」应用处发,仅当筛选实际生效
+      //   (与本文件 channel_search_query 的 hasEffectiveFilters 门控同口径,避免空应用刷量)。
+      //   属性为静态枚举/布尔:has_sender / sort / time_range,绝不上报发送人 uid 明细或关键词。
+      if (hasEffectiveFilters(next)) {
+        const timeRange = next.datePreset ?? ((next.startAt || next.endAt) ? "custom" : "all");
+        Dap.shared.track("channel_search_filtered", {
+          channel_id: stripSpacePrefix(channel.channelID),
+          has_sender: next.senderUids.length > 0,
+          sort: next.sort,
+          time_range: timeRange,
+        });
+      }
+      setFilters(next);
+    },
+    [channel.channelID]
+  );
   const updateKeyword = useCallback(
     (value: string) => {
       const runeCount = countChannelSearchKeywordRunes(value);
@@ -363,7 +381,7 @@ const ChannelSearchPanel: React.FC<ChannelSearchPanelProps> = ({
               open={filterOpen}
               filters={filters}
               dataSource={dataSource}
-              onApply={setFilters}
+              onApply={handleApplyFilters}
               onClose={() => setFilterOpen(false)}
             />
           </div>

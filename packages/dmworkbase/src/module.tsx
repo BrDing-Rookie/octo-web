@@ -1584,6 +1584,16 @@ export default class BaseModule implements IModule {
           onClick: () => {
             void WKApp.saveMessageToDriveAt?.(params).then(() => {
               Toast.success(t("base.messageFile.saveToDriveSuccess"));
+              // message_file_saved_to_drive(DAP-218 A 类):仅在存盘成功回调里计一次。
+              //   channel_id 复用上方已归一的 channelID(Person 已 stripSpacePrefix);file_type/size
+              //   取自文件消息内容(FileContent),不含文件名/正文。
+              const fileContent = message.content as FileContent;
+              Dap.shared.track("message_file_saved_to_drive", {
+                channel_id: channelID,
+                channel_type: message.channel.channelType,
+                file_type: fileContent?.extension || "",
+                size: fileContent?.size ?? 0,
+              });
             }).catch(() => undefined);
           },
         };

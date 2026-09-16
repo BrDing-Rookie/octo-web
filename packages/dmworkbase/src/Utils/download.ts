@@ -1,5 +1,6 @@
 import { isSafeUrl } from "./security";
 import WKApp from "../App";
+import { Dap } from "../Service/Dap";
 import { getElectronIpcBridge, isElectronPowered } from "../electron/desktopBridge";
 import { IPC_DOWNLOAD_STATUS, IPC_DOWNLOAD_URL } from "../../../../apps/web/src-election/shared/ipc-channels";
 import { Toast } from "@douyinfe/semi-ui";
@@ -53,6 +54,15 @@ export async function downloadFile(url: string, filename: string): Promise<void>
 
     const resolvedUrl = parsedUrl.href;
     if (!isSafeUrl(resolvedUrl)) return;
+
+    // message_file_downloaded(DAP-218 A 类):downloadFile 是消息文件下载的唯一收口
+    //   (预览面板 / 折叠文件卡 / 合并转发 / 文件消息均经此),在确认安全 URL、真正发起下载前
+    //   命令式计一次,electron / 浏览器两路都覆盖且不双记。file_type 仅取文件名扩展名(低基数类型标识),
+    //   不上报文件名正文。
+    const lastDot = filename.lastIndexOf(".");
+    Dap.shared.track("message_file_downloaded", {
+        file_type: lastDot > 0 ? filename.slice(lastDot + 1).toLowerCase() : "",
+    });
 
     let downloadUrl = resolvedUrl;
     const isCrossOrigin = parsedUrl.origin !== window.location.origin;
