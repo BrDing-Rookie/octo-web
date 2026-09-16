@@ -40,6 +40,9 @@ export function useSkills(options: UseSkillsOptions = {}): UseSkillsResult {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // market_searched 需带 has_result(结果计数),而检索的 debounce 与结果 fetch 解耦在两个 effect。
+  // 用该 ref 标记「本次是检索触发的首页拉取」,在下一次首页 fetch 成功后就近取 total 发埋点。
+  const pendingSearchEmitRef = useRef(false);
 
   const fetchPage = useCallback(
     async (nextCursor?: string | null) => {
@@ -118,6 +121,15 @@ export function useSkills(options: UseSkillsOptions = {}): UseSkillsResult {
         );
         setTotal(page.total);
         setCursor(page.nextCursor);
+        // 检索触发的首页拉取成功后发 market_searched(market_type='skill'),带 has_result。
+        // 仅首页(!isMore)、仅被检索置位时消费一次;分类/标签/加载更多等其它 fetch 不发。
+        if (!isMore && pendingSearchEmitRef.current) {
+          pendingSearchEmitRef.current = false;
+          Dap.shared.track("market_searched", {
+            market_type: "skill",
+            has_result: page.total > 0,
+          });
+        }
       } catch (err) {
         if (controller.signal.aborted) return;
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -139,9 +151,9 @@ export function useSkills(options: UseSkillsOptions = {}): UseSkillsResult {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedQuery(query);
-      // 埋点 317:遥测 fire-and-forget，放在 setDebouncedQuery 之后 —— debounce 主逻辑先落地;
-      // track() 内部以 safe() 自吞异常(Dap 未初始化 / 测试未 mock 时静默),不回灌到本回调。
-      if (query.trim()) Dap.shared.track("market_searched", {});
+      // 埋点 317:market_searched 移到结果 fetch 返回后再发,以带 has_result。这里仅置位标记,
+      // 由 debouncedQuery 变化触发的下一次首页 fetch 成功后消费(见 fetchPage)。绝不采 keyword。
+      if (query.trim()) pendingSearchEmitRef.current = true;
     }, 300);
     return () => window.clearTimeout(timer);
   }, [query]);

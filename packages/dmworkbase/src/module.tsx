@@ -1433,7 +1433,10 @@ export default class BaseModule implements IModule {
             // (ThreadPanel/index.tsx handleCreateThread)同一事件名——顶栏 + 右键统一到 channel_subchannel_create_dialog_opened。
             // 同一 testid(ctx-message-create-thread)原有的 TrackRules DOM 规则(message_subchannel_create_dialog_opened)
             // 已一并删除,避免同手势双记不同名(#1452 review P1)。
-            Dap.shared.track('channel_subchannel_create_dialog_opened', {});
+            // channel_id=子区所属父群(归一 bare id,就近取自 message.channel)。
+            Dap.shared.track('channel_subchannel_create_dialog_opened', {
+              channel_id: stripSpacePrefix(message.channel.channelID),
+            });
             // 使用消息内容作为默认名称，截取前20个字符
             const defaultName = (
               message.content?.conversationDigest || ""

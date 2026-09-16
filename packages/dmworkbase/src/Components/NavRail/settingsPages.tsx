@@ -410,7 +410,7 @@ function VoiceInputSettingsPage({ environment }: { environment: import("../../Ru
       await acceptVoiceInput(spaceId, consentChecked, () => WKApp.shared.currentSpaceId === spaceId);
       voiceSettingsStore.acknowledge();
       voiceSettingsStore.set({ enabled: true });
-      Dap.shared.track("settings_voice_toggled", { enabled: true });
+      Dap.shared.track("settings_voice_toggled", { setting: "voice_input", enabled: true });
       setShowConsent(false);
     } catch {
       Toast.error(t("base.navRail.settingsCenter.value.saveFailed"));
@@ -421,13 +421,13 @@ function VoiceInputSettingsPage({ environment }: { environment: import("../../Ru
   const toggle = (enabled: boolean) => {
     if (!enabled) {
       voiceSettingsStore.set({ enabled: false });
-      Dap.shared.track("settings_voice_toggled", { enabled: false });
+      Dap.shared.track("settings_voice_toggled", { setting: "voice_input", enabled: false });
       return;
     }
     if (settings.consent?.protocolVersion !== VOICE_PROTOCOL_VERSION) setShowConsent(true);
     else {
       voiceSettingsStore.set({ enabled: true });
-      Dap.shared.track("settings_voice_toggled", { enabled: true });
+      Dap.shared.track("settings_voice_toggled", { setting: "voice_input", enabled: true });
     }
   };
   const authorize = async () => { if (!navigator.mediaDevices?.getUserMedia) return; try { const stream = await navigator.mediaDevices.getUserMedia({ audio: settings.microphoneDeviceId ? { deviceId: { exact: settings.microphoneDeviceId } } : true }); stream.getTracks().forEach((track) => track.stop()); await refreshDevices(); await refreshPermission(); } catch { await refreshPermission(); } };
