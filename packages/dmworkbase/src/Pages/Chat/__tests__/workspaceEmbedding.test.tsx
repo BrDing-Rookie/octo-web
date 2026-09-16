@@ -100,6 +100,31 @@ describe("ChatContentPage workspaceEmbedding", () => {
       expect(setState.mock.calls[0][0].previewFile).toBeTruthy();
     });
 
+    it("preserves pending file preview source and download URLs", () => {
+      const page = createPage(new Channel("g", 2));
+      (WKApp as any).shared.pendingFilePreview = {
+        url: "blob:preview",
+        sourceUrl: "/files/source/report.html",
+        downloadUrl: "/files/download/report.html",
+        name: "report.html",
+        extension: "html",
+        messageId: "m-html",
+      };
+
+      mountPage(page);
+
+      expect((WKApp as any).shared.pendingFilePreview).toBeUndefined();
+      expect(page.state.previewFile).toMatchObject({
+        url: "blob:preview",
+        sourceUrl: "/files/source/report.html",
+        downloadUrl: "/files/download/report.html",
+        name: "report.html",
+        extension: "html",
+        messageId: "m-html",
+      });
+      expect(page.state.activePreviewMessageId).toBe("m-html");
+    });
+
     it("opens thread panel on onOpenThreadPanel", () => {
       const page = createPage(new Channel("g", 2));
       const setState = vi.spyOn(page, "setState");
@@ -139,6 +164,24 @@ describe("ChatContentPage workspaceEmbedding", () => {
       const page = createPage(new Channel("g", 2), { ...EMPTY_EMBEDDING, onSidePanelUnavailable: unavailable });
       page._onFilePreview({ url: "u", name: "f.txt", extension: "txt", size: 1, messageId: "m1" });
       expect(unavailable).toHaveBeenCalledTimes(1);
+    });
+
+    it("consumes a pending file preview without opening the side panel", () => {
+      const page = createPage(new Channel("g", 2), EMPTY_EMBEDDING);
+      (WKApp as any).shared.pendingFilePreview = {
+        url: "blob:preview",
+        sourceUrl: "/files/source/report.html",
+        downloadUrl: "/files/download/report.html",
+        name: "report.html",
+        extension: "html",
+        messageId: "m-html",
+      };
+
+      mountPage(page);
+
+      expect((WKApp as any).shared.pendingFilePreview).toBeUndefined();
+      expect(page.state.previewFile).toBeNull();
+      expect(page.state.activePreviewMessageId).toBeNull();
     });
 
     it("calls onSidePanelUnavailable for channel search", () => {
