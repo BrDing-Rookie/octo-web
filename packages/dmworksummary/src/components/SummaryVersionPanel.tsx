@@ -2,7 +2,7 @@ import React from "react";
 import { Button, Tag } from "@douyinfe/semi-ui";
 import { IconHistory, IconClose } from "@douyinfe/semi-icons";
 import { ChevronRight } from "lucide-react";
-import { useI18n } from "@octo/base";
+import { useI18n, Dap } from "@octo/base";
 import type { SummaryVersionItem } from "../types/summary";
 import { formatDate } from "../utils/summaryHelpers";
 import { summaryTestIds } from "../utils/testIds";
@@ -120,7 +120,11 @@ const SummaryVersionPanel: React.FC<SummaryVersionPanelProps> = ({
                                 data-testid={summaryTestIds.versionCard(version.version)}
                                 className={`version-card${isCurrent ? " is-current" : ""}${isSelected ? " is-selected" : ""}`}
                                 aria-pressed={isSelected}
-                                onClick={() => onSelect(version)}
+                                onClick={() => {
+                                    // DAP-218 M11：查看某历史版本(点版本卡预览)手势;props 留空。
+                                    Dap.shared.track("smart_summary_version_viewed", {});
+                                    onSelect(version);
+                                }}
                             >
                                 <span className="version-card__marker" aria-hidden>
                                     <span>{`V${version.version}`}</span>

@@ -323,6 +323,8 @@ export default class AgentChatPanel extends Component<AgentChatPanelProps, Agent
         
         const success = await this.props.onSaveAsSummary(title, this.lastRequestId || undefined);
         if (success) {
+            // DAP-218 M11：Agent 会话「保存为总结」成功命令式发 smart_summary_agent_saved;props 留空。
+            Dap.shared.track("smart_summary_agent_saved", {});
             this.setState({ showSaveDialog: false, summaryTitle: '' });
         }
     };
@@ -339,7 +341,11 @@ export default class AgentChatPanel extends Component<AgentChatPanelProps, Agent
             <div className={`agent-chat-process-panel${processExpanded ? '' : ' agent-chat-process-panel--collapsed'}`}>
                 <button
                     className="agent-chat-process-toggle"
-                    onClick={() => this.setState(prev => ({ processExpanded: !prev.processExpanded }))}
+                    onClick={() => this.setState(prev => {
+                        // DAP-218 M11：展开「查看生成过程」时发(仅展开边,收起不计);props 留空。
+                        if (!prev.processExpanded) Dap.shared.track("smart_summary_agent_process_viewed", {});
+                        return { processExpanded: !prev.processExpanded };
+                    })}
                 >
                     {processExpanded ? '▼' : '▶'} {t('summary.common.agentChat.viewGenerationProcess')} ({progressSteps.length} {t('summary.common.agentChat.stepsCount')})
                 </button>

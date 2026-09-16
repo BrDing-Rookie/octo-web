@@ -1,6 +1,6 @@
 import React, { useContext, useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { Popover } from "@douyinfe/semi-ui";
-import { i18n, useI18n } from "@octo/base";
+import { i18n, useI18n, Dap } from "@octo/base";
 import { Channel, ChannelTypeGroup, ChannelTypePerson } from "wukongimjssdk";
 import WKAvatar from "@octo/base/src/Components/WKAvatar";
 import { ChannelTypeCommunityTopic } from "@octo/base/src/Service/Const";
@@ -246,6 +246,8 @@ function JumpLink({ citation, badgeKey, closeKey }: { citation: CitationItem; ba
             <span style={{ fontSize: 12, fontWeight: 400, lineHeight: '20px', color: 'rgba(28, 28, 35, 0.4)', cursor: 'pointer' }}
                 onClick={(e) => {
                     e.stopPropagation();
+                    // DAP-218 M11：从引用预览「跳转到原文」手势;props 留空。
+                    Dap.shared.track("smart_summary_reference_jumped", {});
                     closeKey(badgeKey);
                     let channelId = citation.channel_id!;
                     const channelType = resolveChannelType(citation.channel_type);
@@ -286,7 +288,11 @@ function useHoverPin(pinned: boolean) {
     const onMouseEnter = useCallback(() => {
         if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
         if (hovering || pinned) return;
-        openTimer.current = setTimeout(() => setHovering(true), HOVER_OPEN_DELAY_MS);
+        openTimer.current = setTimeout(() => {
+            // DAP-218 M11：引用悬停预览真正展开(经 HOVER_OPEN_DELAY_MS 延迟)时发;props 留空。
+            Dap.shared.track("smart_summary_reference_hovered", {});
+            setHovering(true);
+        }, HOVER_OPEN_DELAY_MS);
     }, [hovering, pinned]);
 
     const onMouseLeave = useCallback(() => {
@@ -388,9 +394,17 @@ const CitationBadge: React.FC<CitationBadgeProps> = ({ index, displayIndex, cita
                 aria-expanded={visible}
                 onMouseEnter={onMouseEnter}
                 onMouseLeave={onMouseLeave}
-                onClick={() => onBadgeClick(badgeKey)}
+                onClick={() => {
+                    // DAP-218 M11：点击引用角标「展开」预览时发(仅展开边,再点收起不计);props 留空。
+                    if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                    onBadgeClick(badgeKey);
+                }}
                 onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBadgeClick(badgeKey); }
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                        onBadgeClick(badgeKey);
+                    }
                     if (e.key === 'Escape' && pinned) { e.preventDefault(); closeKey(badgeKey); }
                 }}
             >[{shownIndex}]</sup>
@@ -523,9 +537,17 @@ export const CitationGroupBadge: React.FC<CitationGroupBadgeProps> = ({ indices,
                 aria-expanded={visible}
                 onMouseEnter={onMouseEnter}
                 onMouseLeave={onMouseLeave}
-                onClick={() => onBadgeClick(badgeKey)}
+                onClick={() => {
+                    // DAP-218 M11：点击引用角标「展开」预览时发(仅展开边,再点收起不计);props 留空。
+                    if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                    onBadgeClick(badgeKey);
+                }}
                 onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBadgeClick(badgeKey); }
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (!pinned) Dap.shared.track("smart_summary_reference_clicked", {});
+                        onBadgeClick(badgeKey);
+                    }
                     if (e.key === 'Escape' && pinned) { e.preventDefault(); closeKey(badgeKey); }
                 }}
             >[{label}]</sup>
