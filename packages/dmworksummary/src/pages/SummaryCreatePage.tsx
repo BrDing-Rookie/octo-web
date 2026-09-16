@@ -424,6 +424,13 @@ export default class SummaryCreatePage extends Component<
       editingTemplateDescription:
         getTemplateEditableFields(template).description,
         });
+        // 预设模板卡「编辑」弹窗成功打开时上报;自定义模板的编辑不计入本事件(spec 限定预设)。
+        // template_name 取被编辑预设的当前展示名,用于与保存事件配对识别同一条模板。
+        if (!template.is_custom) {
+            Dap.shared.track("smart_summary_preset_template_edit_opened", {
+                template_name: template.label,
+            });
+        }
     };
 
     private canCreateCustomTemplate = () => {
@@ -438,11 +445,19 @@ export default class SummaryCreatePage extends Component<
 
     private handleCustomTemplateCreate = () => {
         if (!this.canCreateCustomTemplate()) return;
+        // 已达上限时上面已 return,入口不可见不触发;此处 guard 通过、弹窗进入创建态才计一次。
+        // template_count_before 就近取当前已有自定义模板数,用于观察临近 30 上限时的打开行为。
+        const templateCountBefore = this.state.templates
+            .map((tpl) => resolveTemplate(tpl, this.context.t))
+            .filter((tpl) => tpl.is_custom).length;
         this.setState({
             editingTemplate: null,
             creatingCustomTemplate: true,
             editingTemplateLabel: "",
             editingTemplateDescription: "",
+        });
+        Dap.shared.track("smart_summary_custom_template_create_opened", {
+            template_count_before: templateCountBefore,
         });
     };
 
