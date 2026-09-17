@@ -98,13 +98,16 @@ export async function downloadFile(url: string, filename: string): Promise<void>
     if (!isSafeUrl(resolvedUrl)) return;
 
     // message_file_downloaded(DAP-218 A 类):downloadFile 是消息文件下载的唯一收口
-    //   (预览面板 / 折叠文件卡 / 合并转发 / 文件消息均经此),在确认安全 URL、真正发起下载前
-    //   命令式计一次,electron / 浏览器两路都覆盖且不双记。file_type 由 classifyDownloadFileType
-    //   钳制到已知扩展名白名单:命中原样上报,非白名单一律 "other",无后缀为 ""——绝不透传原始
-    //   文件名后缀片段(否则 `名字.客户机密项目` 会把正文当扩展名泄漏),保持低基数枚举。
-    Dap.shared.track("message_file_downloaded", {
-        file_type: classifyDownloadFileType(filename),
-    });
+    //   (预览面板 / 折叠文件卡 / 合并转发 / 文件消息均经此)。
+    // B-2(第三轮返工):**按 surface 拆语义,不再在发起前无条件计数**——否则桌面端取消/失败
+    //   也被记为完成,违反本 PR 自己的 finding-4(失败不计)与仓内 doctrine(点击→resolve 后计)。
+    //   · electron 路:订阅 IPC_DOWNLOAD_STATUS,仅 `completed` 分支计一次(见下),
+    //     failed/cancelled/expired 不计——这是可观测完成的完成计数语义。
+    //   · 浏览器 anchor 路:无法观测完成,保持 action 语义(发起即计,见下方 anchor 分支)。
+    //   file_type 由 classifyDownloadFileType 钳制到已知扩展名白名单:命中原样上报,非白名单一律
+    //   "other",无后缀为 ""——绝不透传原始文件名后缀片段(否则 `名字.客户机密项目` 会把正文当扩展名
+    //   泄漏),保持低基数枚举。file_type 白名单钳制已在前轮确认修好,本轮只改 emit 时机/位置。
+    const fileType = classifyDownloadFileType(filename);
 
     let downloadUrl = resolvedUrl;
     const isCrossOrigin = parsedUrl.origin !== window.location.origin;
@@ -124,10 +127,13 @@ export async function downloadFile(url: string, filename: string): Promise<void>
                     const status = (args[0] || {}) as { id?: string; state?: string; filename?: string };
                     if (status?.id !== id) return;
                     if (status.state === "completed") {
+                        // B-2:electron 下载完成态才计 message_file_downloaded(完成计数语义)。
+                        Dap.shared.track("message_file_downloaded", { file_type: fileType });
                         Toast.success({ content: t("base.download.completed", { values: { filename: displayName(status.filename || filename) } }), duration: 2.5 });
                         cleanup();
                     }
                     if (status.state === "failed") {
+                        // failed/cancelled/expired 不计:取消/失败不是完成。
                         Toast.error({ content: t("base.download.failed", { values: { filename: displayName(status.filename || filename) } }), duration: 3 });
                         cleanup();
                     }
@@ -162,6 +168,9 @@ export async function downloadFile(url: string, filename: string): Promise<void>
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+        // B-2:浏览器 anchor 路无法观测下载完成,保持 action 语义——发起(点击)即计一次。
+        //   仅在 anchor 成功创建并点击后计,避免 URL 解析/安全校验被拒时误计。
+        Dap.shared.track("message_file_downloaded", { file_type: fileType });
     } catch (err) {
         console.warn("downloadFile: anchor click failed, trying window.open", err);
         try {

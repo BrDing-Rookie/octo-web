@@ -41,6 +41,7 @@ import {
     revokeSummaryShare,
     updateCustomTopicTemplate,
 } from '../summaryApi';
+import { SummaryMode } from '../../types/summary';
 
 describe('summaryApi interceptors', () => {
   it('injects language, token, and space headers', async () => {
@@ -1192,5 +1193,95 @@ describe('DAP-271 — emit 站点 props(finding 1 隐私 / finding 6 补齐)', (
         mockPost.mockResolvedValueOnce({ data: { code: 0, data: null } });
         const confirmed = await trackFor((api) => api.confirmSchedule(60, 888), 'smart_summary_recurring_participation_confirmed');
         expect(confirmed).toMatchObject({ summary_id: 888 });
+    });
+});
+
+describe('B-1 — smart_summary_timer_configured frequency_unit/frequency_n 映射', () => {
+    async function trackFor(run: (api: typeof import('../summaryApi')) => Promise<unknown>, event: string) {
+        const { Dap } = await import('@octo/base');
+        const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+        const api = await import('../summaryApi');
+        await run(api);
+        const hit = track.mock.calls.find((c) => c[0] === event);
+        track.mockRestore();
+        return hit?.[1] as Record<string, unknown> | undefined;
+    }
+
+    // scheduleToParams 对周调度编码为 interval_days=every*7 + day_of_week，与「每 N 天」在
+    // 提交参数层字节相同。这些用例覆盖：日/周(每1)/双周/月，断言 frequency_* 正确。
+    const base = {
+        title: 't',
+        summary_mode: SummaryMode.BY_GROUP,
+        cron_expr: '',
+        time_range_type: 2 as const,
+        sources: [],
+    };
+
+    it('daily every 1 → {day, 1}(带 UI 真值)', async () => {
+        mockPost.mockResolvedValueOnce({ data: { code: 0, data: { schedule_id: 1 } } });
+        const props = await trackFor(
+            (api) => api.createSchedule(
+                { ...base, interval_days: 1, interval_months: 0, day_of_week: 0, day_of_month: 0, run_time: '09:00' },
+                { unit: 'day', every: 1 },
+            ),
+            'smart_summary_timer_configured',
+        );
+        expect(props).toMatchObject({ frequency_unit: 'day', frequency_n: 1 });
+    });
+
+    it('weekly every 1 → {week, 1}(生产者把它编码成 interval_days=7,不能误报成 day)', async () => {
+        mockPost.mockResolvedValueOnce({ data: { code: 0, data: { schedule_id: 2 } } });
+        const props = await trackFor(
+            (api) => api.createSchedule(
+                { ...base, interval_days: 7, interval_months: 0, day_of_week: 3, day_of_month: 0, run_time: '09:00' },
+                { unit: 'week', every: 1 },
+            ),
+            'smart_summary_timer_configured',
+        );
+        expect(props).toMatchObject({ frequency_unit: 'week', frequency_n: 1 });
+    });
+
+    it('biweekly → {week, 2}', async () => {
+        mockPost.mockResolvedValueOnce({ data: { code: 0, data: { schedule_id: 3 } } });
+        const props = await trackFor(
+            (api) => api.createSchedule(
+                { ...base, interval_days: 14, interval_months: 0, day_of_week: 3, day_of_month: 0, run_time: '09:00' },
+                { unit: 'week', every: 2 },
+            ),
+            'smart_summary_timer_configured',
+        );
+        expect(props).toMatchObject({ frequency_unit: 'week', frequency_n: 2 });
+    });
+
+    it('monthly every 1 → {month, 1}', async () => {
+        mockPut.mockResolvedValueOnce({ data: { code: 0, data: { schedule_id: 4 } } });
+        const props = await trackFor(
+            (api) => api.updateSchedule(4,
+                { interval_days: 0, interval_months: 1, day_of_week: 0, day_of_month: 15, run_time: '09:00' },
+                { unit: 'month', every: 1 },
+            ),
+            'smart_summary_timer_configured',
+        );
+        expect(props).toMatchObject({ frequency_unit: 'month', frequency_n: 1 });
+    });
+
+    it('无 UI 真值兜底：interval_days 为 7 的整数倍且指定周几 → week；纯天 → day', async () => {
+        mockPost.mockResolvedValueOnce({ data: { code: 0, data: { schedule_id: 5 } } });
+        const wk = await trackFor(
+            (api) => api.createSchedule(
+                { ...base, interval_days: 14, interval_months: 0, day_of_week: 3, day_of_month: 0, run_time: '09:00' },
+            ),
+            'smart_summary_timer_configured',
+        );
+        expect(wk).toMatchObject({ frequency_unit: 'week', frequency_n: 2 });
+
+        mockPost.mockResolvedValueOnce({ data: { code: 0, data: { schedule_id: 6 } } });
+        const dy = await trackFor(
+            (api) => api.createSchedule(
+                { ...base, interval_days: 3, interval_months: 0, day_of_week: 0, day_of_month: 0, run_time: '09:00' },
+            ),
+            'smart_summary_timer_configured',
+        );
+        expect(dy).toMatchObject({ frequency_unit: 'day', frequency_n: 3 });
     });
 });

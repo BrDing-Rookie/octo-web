@@ -1321,6 +1321,7 @@ describe('SummaryDetailPage — new schedule: one-step create (scope=task)', () 
         expect(api.createSchedule).toHaveBeenCalledTimes(1);
         expect(api.createSchedule).toHaveBeenCalledWith(
             expect.objectContaining({ scope: 'task', task_id: 1 }),
+            expect.anything(), // B-1：第二参数为 UI 单位真值 hint {unit, every}
         );
         // 不再有第二步绑定、也不再回滚。
         expect(api.updateSchedule).not.toHaveBeenCalled();
@@ -1379,6 +1380,7 @@ describe('SummaryDetailPage — V5 confirm_policy on schedule write paths', () =
 
         expect(api.createSchedule).toHaveBeenCalledWith(
             expect.objectContaining({ scope: 'task', task_id: 1, confirm_policy: 1 }),
+            expect.anything(), // B-1：第二参数为 UI 单位真值 hint
         );
     });
 
@@ -1418,6 +1420,7 @@ describe('SummaryDetailPage — V5 confirm_policy on schedule write paths', () =
         expect(api.updateSchedule).toHaveBeenCalledWith(
             7,
             expect.objectContaining({ scope: 'task', task_id: 1, confirm_policy: 1 }),
+            expect.anything(), // B-1：第三参数为 UI 单位真值 hint
         );
     });
 
@@ -1601,6 +1604,7 @@ describe('SummaryDetailPage — finding 1: 多人判定不被 members 二次异�
         // 多人 → confirm_policy=1，未因 members 未到而误判单人。
         expect(api.createSchedule).toHaveBeenCalledWith(
             expect.objectContaining({ scope: 'task', task_id: 1, confirm_policy: 1 }),
+            expect.anything(), // B-1：第二参数为 UI 单位真值 hint
         );
     });
 

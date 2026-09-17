@@ -30,6 +30,7 @@ import type {
     TopicTemplate,
     TopicTemplatesResponse,
     UpdateScheduleParams,
+    ScheduleUiHint,
     AgentProgressEvent,
     AgentDoneEvent,
     AgentErrorEvent,
@@ -1603,23 +1604,41 @@ export async function getSchedule(scheduleId: number): Promise<ScheduleItem> {
 
 // DAP-266：定时配置埋点维度。仅取 params 上就近存在/可推导的字段：
 //   weekday←day_of_week、time←run_time、has_gen_prompt←generation_instruction 是否非空（只发布尔,绝不带
-//   prompt 文本）；frequency_unit / frequency_n 由周期字段就近推导（interval_months / interval_days 或
-//   周/月模式），无任一周期字段时不推导（DEFER 该两键,不臆造）。
-function buildScheduleTrackProps(params: CreateScheduleParams | UpdateScheduleParams): Record<string, unknown> {
+//   prompt 文本）；frequency_unit / frequency_n 由周期字段推导。
+// B-1（第三轮返工）：scheduleToParams 把周调度编码为 interval_days = every*7 且 day_of_week = 所选周几，
+//   与「每 N 天」在提交参数层字节相同 —— 单看 params，每周每1 会被误报成 {day,7}，永远出不了 "week"。
+//   唯一持有单位真相的是 UI 的 ScheduleConfig.unit/every。因此写路径把它作为 uiHint 透传进来：
+//   · 有 uiHint → frequency_unit/frequency_n 直接用 UI 真值（day/week/month + 每 N），最稳。
+//   · 无 uiHint（旧/直接调用方）→ 回退到 params 推导，且把 week 判定前移
+//     （interval_days 为 7 的整数倍且 day_of_week 非 0 → week），尽量少误报；但残留歧义仍在
+//     （周-不限周几 day_of_week:0 与 daily-每7 在 params 层不可区分，只能靠 uiHint），故优先传 uiHint。
+const DAYS_PER_WEEK_FOR_TRACK = 7;
+function buildScheduleTrackProps(
+    params: CreateScheduleParams | UpdateScheduleParams,
+    uiHint?: ScheduleUiHint,
+): Record<string, unknown> {
     const props: Record<string, unknown> = {
         has_gen_prompt: Boolean(params.generation_instruction?.trim?.()),
     };
     if (params.day_of_week !== undefined) props.weekday = params.day_of_week;
     if (params.run_time !== undefined) props.time = params.run_time;
-    if (params.interval_months) {
+
+    if (uiHint && (uiHint.unit === 'day' || uiHint.unit === 'week' || uiHint.unit === 'month')) {
+        // 生产者侧真值：UI 单位是唯一能区分「每 N 周」与「每 N*7 天」的来源。
+        props.frequency_unit = uiHint.unit;
+        props.frequency_n = Math.max(1, Math.floor(uiHint.every || 1));
+    } else if (params.interval_months) {
         props.frequency_unit = 'month';
         props.frequency_n = params.interval_months;
     } else if (params.interval_days) {
-        props.frequency_unit = 'day';
-        props.frequency_n = params.interval_days;
-    } else if (params.day_of_week) {
-        props.frequency_unit = 'week';
-        props.frequency_n = 1;
+        // 兜底：无 UI 真值时，7 的整数倍 + 指定周几 视为周调度，其余按天。
+        if (params.interval_days % DAYS_PER_WEEK_FOR_TRACK === 0 && params.day_of_week) {
+            props.frequency_unit = 'week';
+            props.frequency_n = params.interval_days / DAYS_PER_WEEK_FOR_TRACK;
+        } else {
+            props.frequency_unit = 'day';
+            props.frequency_n = params.interval_days;
+        }
     } else if (params.day_of_month) {
         props.frequency_unit = 'month';
         props.frequency_n = 1;
@@ -1627,9 +1646,9 @@ function buildScheduleTrackProps(params: CreateScheduleParams | UpdateSchedulePa
     return props;
 }
 
-export async function createSchedule(params: CreateScheduleParams): Promise<ScheduleItem> {
+export async function createSchedule(params: CreateScheduleParams, uiHint?: ScheduleUiHint): Promise<ScheduleItem> {
     return normalizeScheduleItem(
-        await post<ScheduleItem>('/summary-schedules', params, 'smart_summary_timer_configured', buildScheduleTrackProps(params)),
+        await post<ScheduleItem>('/summary-schedules', params, 'smart_summary_timer_configured', buildScheduleTrackProps(params, uiHint)),
     );
 }
 
@@ -1638,9 +1657,9 @@ export async function listSchedules(): Promise<ScheduleItem[]> {
     return (data || []).map(normalizeScheduleItem);
 }
 
-export async function updateSchedule(scheduleId: number, params: UpdateScheduleParams): Promise<ScheduleItem> {
+export async function updateSchedule(scheduleId: number, params: UpdateScheduleParams, uiHint?: ScheduleUiHint): Promise<ScheduleItem> {
     return normalizeScheduleItem(
-        await put<ScheduleItem>(`/summary-schedules/${scheduleId}`, params, 'smart_summary_timer_configured', buildScheduleTrackProps(params)),
+        await put<ScheduleItem>(`/summary-schedules/${scheduleId}`, params, 'smart_summary_timer_configured', buildScheduleTrackProps(params, uiHint)),
     );
 }
 

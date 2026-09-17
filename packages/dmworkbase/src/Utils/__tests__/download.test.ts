@@ -19,8 +19,17 @@ vi.mock('../../Service/Dap', () => ({
   },
 }))
 
+// B-2:electron 下载状态由 desktopBridge 桥接。默认按浏览器路(isElectronPowered=false),
+//   electron 测试里逐例改成 true 并注入捕获 IPC_DOWNLOAD_STATUS 监听器的假 bridge。
+vi.mock('../../electron/desktopBridge', () => ({
+  isElectronPowered: vi.fn(() => false),
+  getElectronIpcBridge: vi.fn(() => null),
+}))
+
 import { downloadFile, getPresignedDownloadUrl, getPresignedPreviewUrl, classifyDownloadFileType } from '../download'
 import WKApp from '../../App'
+import { isElectronPowered, getElectronIpcBridge } from '../../electron/desktopBridge'
+import { IPC_DOWNLOAD_STATUS, IPC_DOWNLOAD_URL } from '../../../../../apps/web/src-election/shared/ipc-channels'
 
 describe('downloadFile', () => {
   let capturedAnchor: HTMLAnchorElement | null = null
@@ -140,5 +149,66 @@ describe('message_file_downloaded file_type privacy guard', () => {
     const calls = mockTrack.mock.calls
     const props = calls[calls.length - 1][1] as { file_type: string }
     expect(props.file_type).not.toContain('客户')
+  })
+})
+
+describe('message_file_downloaded electron completion semantics (B-2)', () => {
+  // electron 路只在下载「完成」时计一次;取消/失败/过期都不计。
+  let statusListener: ((event: unknown, ...args: unknown[]) => void) | null = null
+  let invokeMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    mockTrack.mockClear()
+    statusListener = null
+    invokeMock = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(isElectronPowered).mockReturnValue(true)
+    vi.mocked(getElectronIpcBridge).mockReturnValue({
+      send: vi.fn(),
+      once: vi.fn(),
+      invoke: invokeMock as unknown as (channel: string, ...args: unknown[]) => Promise<unknown>,
+      on: (channel: string, listener: (event: unknown, ...args: unknown[]) => void) => {
+        if (channel === IPC_DOWNLOAD_STATUS) statusListener = listener
+      },
+      removeListener: vi.fn(),
+    })
+  })
+
+  afterEach(() => {
+    vi.mocked(isElectronPowered).mockReturnValue(false)
+    vi.mocked(getElectronIpcBridge).mockReturnValue(null)
+  })
+
+  // 从 invoke(IPC_DOWNLOAD_URL, url, filename, id) 拿到内部生成的 download id
+  const invokedId = (): string => {
+    const call = invokeMock.mock.calls.find((c) => c[0] === IPC_DOWNLOAD_URL)
+    return (call?.[3] as string) ?? ''
+  }
+
+  it('emits once with clamped file_type only after status === completed', async () => {
+    await downloadFile('/files/report.pdf', 'report.pdf')
+    expect(mockTrack).not.toHaveBeenCalled() // 发起时不计
+    expect(statusListener).not.toBeNull()
+
+    statusListener!(null, { id: invokedId(), state: 'completed', filename: 'report.pdf' })
+    expect(mockTrack).toHaveBeenCalledTimes(1)
+    expect(mockTrack).toHaveBeenCalledWith('message_file_downloaded', { file_type: 'pdf' })
+  })
+
+  it('does NOT emit when status === failed', async () => {
+    await downloadFile('/files/report.pdf', 'report.pdf')
+    statusListener!(null, { id: invokedId(), state: 'failed', filename: 'report.pdf' })
+    expect(mockTrack).not.toHaveBeenCalled()
+  })
+
+  it('does NOT emit when status === cancelled', async () => {
+    await downloadFile('/files/report.pdf', 'report.pdf')
+    statusListener!(null, { id: invokedId(), state: 'cancelled', filename: 'report.pdf' })
+    expect(mockTrack).not.toHaveBeenCalled()
+  })
+
+  it('ignores status events for a different download id', async () => {
+    await downloadFile('/files/report.pdf', 'report.pdf')
+    statusListener!(null, { id: 'some-other-id', state: 'completed', filename: 'report.pdf' })
+    expect(mockTrack).not.toHaveBeenCalled()
   })
 })

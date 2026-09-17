@@ -2219,6 +2219,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         const { cron_expr, interval_days, interval_months, day_of_week, day_of_month, run_time, confirm_policy } =
             scheduleToParams({ ...config, confirm_policy: confirmPolicy });
         const generation_instruction = (config.generationInstruction || "").trim();
+        // B-1：把 UI 单位真值透传给埋点，避免 buildScheduleTrackProps 把「每 N 周」误报成「每 N*7 天」。
+        const scheduleUiHint = { unit: config.unit, every: Math.max(1, Math.floor(config.every || 1)) };
 
         try {
             if (scheduleItem) {
@@ -2246,7 +2248,7 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                     ...participantsParam,
                     // V5：多人「改/转定时」带 confirm_policy=1 触发后端一次性确认重置。
                     ...(confirm_policy !== undefined ? { confirm_policy } : {}),
-                });
+                }, scheduleUiHint);
                 const effectiveScheduleId = updated?.schedule_id ?? scheduleItem.schedule_id;
 
                 if (wasInactive) {
@@ -2291,7 +2293,7 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                     // V5：多人「手动转定时」关键路径带 confirm_policy=1，
                     // 后端创建 participant_config 时全员（含 creator）置 confirmed=false。
                     ...(confirm_policy !== undefined ? { confirm_policy } : {}),
-                });
+                }, scheduleUiHint);
                 Toast.success(t("summary.detail.scheduleCreated"));
                 // 拉取刚建并已绑定的定时回显。
                 // 续修5：切了 task 就别回显 / 别动新 task 的 UI。
