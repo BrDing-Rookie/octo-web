@@ -9,6 +9,7 @@ import { Input, Modal, Spin, Toast } from "@douyinfe/semi-ui";
 import { Dap, useI18n } from "@octo/base";
 import WKApp from "@octo/base/src/App";
 import type { SummaryMessagingPort } from "../../host";
+import { themeLenBucket } from "../../utils/summaryHelpers";
 import SummaryDetailPage from "../../pages/SummaryDetailPage";
 import ChatSelectorModal from "../../components/ChatSelectorModal";
 import SummaryReferencePicker from "../../components/SummaryReferencePicker";
@@ -482,6 +483,12 @@ export default function SummaryWorkbenchFeature({
       entry_point: source,
       entry_source: source,
       trigger_mode: triggerMode,
+      // DAP-266：补 spec 维度 mode / channel_count / channel_ids / participant_count（就近取自 workbench.scope）。
+      //   template_source（预设/自定义来源枚举）scope.template 无该区分字段 → DEFER。
+      mode: triggerMode,
+      channel_count: workbench.scope.selectedChannels.length,
+      channel_ids: workbench.scope.selectedChannels.map((c) => c.chatId),
+      participant_count: workbench.scope.participants.length,
     });
     window.dispatchEvent(
       new CustomEvent("chat-summary-created", {
@@ -654,7 +661,11 @@ export default function SummaryWorkbenchFeature({
         : workbench.send(message, inputOrigin)
     );
     if (isAcceptedResponse(response)) {
-      Dap.shared.track("smart_summary_agent_message_sent", {});
+      // DAP-266：补 has_reference（是否携带引用总结）。duration_seconds（请求耗时）此处无起始
+      //   时间戳可取 → DEFER。
+      Dap.shared.track("smart_summary_agent_message_sent", {
+        has_reference: workbench.scope.referencedTaskIds.length > 0,
+      });
     }
     observeWorkflow(response);
   };
@@ -856,7 +867,9 @@ export default function SummaryWorkbenchFeature({
       // P1-4 (yujiawei review 5087124100): the workbench path lost this event —
       // its sole sink was the legacy SummaryCreatePage. Same payload shape as
       // the legacy emitter: no content, intent only.
-      Dap.shared.track("smart_summary_template_applied", {});
+      // DAP-266：补 source（应用来源=workbench）。template_type（预设/自定义）scope.template
+      //   无该区分字段 → DEFER。
+      Dap.shared.track("smart_summary_template_applied", { source: "workbench" });
     });
   };
 
@@ -928,7 +941,11 @@ export default function SummaryWorkbenchFeature({
               themeTrackTimer.current = setTimeout(() => {
                 themeTrackTimer.current = null;
                 if (value.trim())
-                  Dap.shared.track("smart_summary_theme_input", {});
+                  // DAP-266：补 theme_len_bucket（长度分桶,非正文）。used_voice（是否语音输入）
+                  //   此输入回调无语音来源标志 → DEFER。
+                  Dap.shared.track("smart_summary_theme_input", {
+                    theme_len_bucket: themeLenBucket(value.trim().length),
+                  });
               }, 600);
             },
             onSend: () => void send(),

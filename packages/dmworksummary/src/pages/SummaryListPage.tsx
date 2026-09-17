@@ -569,8 +569,9 @@ export default class SummaryListPage extends Component<
     }
 
     handleStatusChange = (value: string | number) => {
-        // 埋点 292:状态筛选切换（隐私 props 恒空，不采具体状态值）。
-        Dap.shared.track("smart_summary_status_filtered", {});
+        // 埋点 292:状态筛选切换。
+        // DAP-266：补 status（所选状态枚举值,标识非内容；空串=全部→'all'）。
+        Dap.shared.track("smart_summary_status_filtered", { status: value === "" ? "all" : value });
         const statusFilter = value === "" ? undefined : (value as TaskStatusType);
         this.setState({ statusFilter, page: 1 }, () => this.loadData());
     };
@@ -580,6 +581,7 @@ export default class SummaryListPage extends Component<
         if (this.searchTimer) clearTimeout(this.searchTimer);
         this.searchTimer = setTimeout(() => {
             // 埋点 291:去抖后「发生了一次搜索」，仅在有关键词时发，绝不采关键词值。
+            // DAP-266：has_result 需在 loadData 拿到结果后才知，emit 时点(搜索触发前)无就近结果数 → DEFER。
             if (value.trim()) Dap.shared.track("smart_summary_searched", {});
             this.setState({ page: 1 }, () => this.loadData());
         }, 400);
@@ -716,7 +718,8 @@ export default class SummaryListPage extends Component<
         // 从「+」下拉显式选择 Agent 总结属于一次模式选择行为：创建页内切换已随本功能
         // 上移到列表页「+」，补发模式事件以保留 smart_summary_mode_switched 埋点维度。
         if (mode === "agent") {
-            Dap.shared.track("smart_summary_mode_switched", { to: "agent" });
+            // DAP-266：spec 键为 mode（此前误用 to）；对齐 result doc spec_props。
+            Dap.shared.track("smart_summary_mode_switched", { mode: "agent" });
         }
         if (this.props.onCreateNew) {
             // 面板模式：把所选模式透传给宿主（ChatSummaryPanel）供其 create 视图预置 initialMode。

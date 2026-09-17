@@ -235,10 +235,14 @@ describe("TemplateSelectorModal", () => {
       fireEvent.click(view.getByRole("button", { name: "Save" }));
     });
 
-    expect(create).toHaveBeenCalledWith({
-      label: "Decision log",
-      description: "Only decisions",
-    });
+    // DAP-266：create 现额外接收 trackProps（template_count_after=创建后自定义模板数）。
+    expect(create).toHaveBeenCalledWith(
+      {
+        label: "Decision log",
+        description: "Only decisions",
+      },
+      expect.objectContaining({ template_count_after: expect.any(Number) }),
+    );
     expect(await view.findByText("Decision log")).toBeInTheDocument();
   });
 

@@ -125,7 +125,10 @@ export default class AgentChatPanel extends Component<AgentChatPanelProps, Agent
         if (this.props.useStream) {
             this.startSSEStream(text);
         } else {
-            Dap.shared.track("smart_summary_agent_message_sent", {});
+            // DAP-266：补 has_reference（会话是否携带引用总结）。duration_seconds 在发送时点无耗时可取 → DEFER。
+            Dap.shared.track("smart_summary_agent_message_sent", {
+                has_reference: (this.props.referencedTaskIds?.length ?? 0) > 0,
+            });
             this.props.onSend(text);
             this.setState({ input: '' });
         }
@@ -140,7 +143,10 @@ export default class AgentChatPanel extends Component<AgentChatPanelProps, Agent
             return;
         }
         // 过 !profile 守卫 = 确有一次发送,在此命令式补点(见 handleSend 注释)。
-        Dap.shared.track("smart_summary_agent_message_sent", {});
+        // DAP-266：补 has_reference。duration_seconds（请求耗时）此发送时点未知 → DEFER。
+        Dap.shared.track("smart_summary_agent_message_sent", {
+            has_reference: (this.props.referencedTaskIds?.length ?? 0) > 0,
+        });
 
         // Bug fix: props.sessionId 可能是空字符串(父组件的 setState 是异步的,
         // 首次交互时父组件从 onUserMessage 生成的新 sessionId 在同一 render
@@ -323,6 +329,9 @@ export default class AgentChatPanel extends Component<AgentChatPanelProps, Agent
         
         const success = await this.props.onSaveAsSummary(title, this.lastRequestId || undefined);
         if (success) {
+            // DAP-218 M11：Agent 会话「保存为总结」成功命令式发 smart_summary_agent_saved。
+            // DAP-266：补 message_count（会话消息条数,来自 props.messages）。
+            Dap.shared.track("smart_summary_agent_saved", { message_count: this.props.messages.length });
             this.setState({ showSaveDialog: false, summaryTitle: '' });
         }
     };
@@ -339,7 +348,15 @@ export default class AgentChatPanel extends Component<AgentChatPanelProps, Agent
             <div className={`agent-chat-process-panel${processExpanded ? '' : ' agent-chat-process-panel--collapsed'}`}>
                 <button
                     className="agent-chat-process-toggle"
-                    onClick={() => this.setState(prev => ({ processExpanded: !prev.processExpanded }))}
+                    onClick={() => this.setState(prev => {
+                        // DAP-218 M11：展开「查看生成过程」时发(仅展开边,收起不计)。
+                        // DAP-266：补 step_count（生成过程步数,progressSteps.length）。session_id 为 agent 业务
+                        //   会话 id，与信封自动注入的设备 session_id 语义冲突/会被覆盖 → DEFER（留待后端/后续裁决）。
+                        if (!prev.processExpanded) Dap.shared.track("smart_summary_agent_process_viewed", {
+                            step_count: progressSteps.length,
+                        });
+                        return { processExpanded: !prev.processExpanded };
+                    })}
                 >
                     {processExpanded ? '▼' : '▶'} {t('summary.common.agentChat.viewGenerationProcess')} ({progressSteps.length} {t('summary.common.agentChat.stepsCount')})
                 </button>

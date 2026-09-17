@@ -959,16 +959,17 @@ describe('summaryApi', () => {
             event: string;
             mock: 'post' | 'del';
             run: (api: typeof import('../summaryApi')) => Promise<unknown>;
+            props?: Record<string, unknown>;
         }> = [
-            { name: 'addMembers', event: 'smart_summary_member_added', mock: 'post', run: (api) => api.addMembers(1, ['u1']) },
-            { name: 'removeMember', event: 'smart_summary_member_removed', mock: 'del', run: (api) => api.removeMember(1, 'u1') },
-            { name: 'cancelSummary', event: 'smart_summary_task_cancelled', mock: 'post', run: (api) => api.cancelSummary(1) },
-            { name: 'restoreSummaryVersion (team)', event: 'smart_summary_version_restored', mock: 'post', run: (api) => api.restoreSummaryVersion(1, 2) },
-            { name: 'restorePersonalSummaryVersion (personal)', event: 'smart_summary_version_restored', mock: 'post', run: (api) => api.restorePersonalSummaryVersion(1, 2) },
+            { name: 'addMembers', event: 'smart_summary_member_added', mock: 'post', run: (api) => api.addMembers(1, ['u1']), props: { summary_id: 1, added_count: 1 } },
+            { name: 'removeMember', event: 'smart_summary_member_removed', mock: 'del', run: (api) => api.removeMember(1, 'u1'), props: { summary_id: 1, removed_count: 1 } },
+            { name: 'cancelSummary', event: 'smart_summary_task_cancelled', mock: 'post', run: (api) => api.cancelSummary(1), props: { summary_id: 1 } },
+            { name: 'restoreSummaryVersion (team)', event: 'smart_summary_version_restored', mock: 'post', run: (api) => api.restoreSummaryVersion(1, 2), props: { summary_id: 1 } },
+            { name: 'restorePersonalSummaryVersion (personal)', event: 'smart_summary_version_restored', mock: 'post', run: (api) => api.restorePersonalSummaryVersion(1, 2), props: { summary_id: 1 } },
         ];
 
         for (const c of cases) {
-            it(`${c.name}: emits ${c.event} once with empty props when envelope code===0`, async () => {
+            it(`${c.name}: emits ${c.event} once with DAP-266 spec props when envelope code===0`, async () => {
                 const { Dap } = await import('@octo/base');
                 const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
                 const api = await import('../summaryApi');
@@ -977,8 +978,8 @@ describe('summaryApi', () => {
                 await c.run(api);
                 const hits = track.mock.calls.filter((call) => call[0] === c.event);
                 expect(hits).toHaveLength(1);
-                // props 留空(注册契约无自定义属性,避免越界被 validator 拒)。
-                expect(hits[0][1]).toEqual({});
+                // DAP-266：补齐 result doc spec_props（summary_id 等业务 id 不自动注入,须显式传）。
+                expect(hits[0][1]).toEqual(c.props ?? {});
                 track.mockRestore();
             });
 
@@ -1004,5 +1005,115 @@ describe('summaryApi', () => {
                 track.mockRestore();
             });
         }
+    });
+});
+
+// DAP-218 M11：本轮补埋的 api 层「动作完成」类事件的 envelope gate。与 DAP-110 Stage 2 同款——
+// 唯一收口在 api 层,仅 code===0 才命令式 track 一次,props 留空;code!==0 / 缺 code 一律不发。
+describe('DAP-218 M11 envelope gate — template/member/submit/schedule', () => {
+    type Api = typeof import('../summaryApi');
+    const cases: Array<{
+        name: string;
+        event: string;
+        mock: 'post' | 'put' | 'del';
+        run: (api: Api) => Promise<unknown>;
+        props?: Record<string, unknown>;
+    }> = [
+        { name: 'updateMyTopicTemplate', event: 'smart_summary_preset_template_edited', mock: 'put', run: (api) => api.updateMyTopicTemplate('tpl_1', { label: 'x', description: 'd' }), props: { template_name: 'x' } },
+        { name: 'updateCustomTopicTemplate', event: 'smart_summary_custom_template_edited', mock: 'put', run: (api) => api.updateCustomTopicTemplate('tpl_1', { label: 'x', description: 'd' }), props: { template_name: 'x' } },
+        { name: 'deleteCustomTopicTemplate', event: 'smart_summary_custom_template_deleted', mock: 'del', run: (api) => api.deleteCustomTopicTemplate('tpl_1') },
+        { name: 'leaveSummary', event: 'smart_summary_member_exited', mock: 'post', run: (api) => api.leaveSummary(1), props: { summary_id: 1 } },
+        { name: 'submitPersonalResult', event: 'smart_summary_my_report_submitted', mock: 'post', run: (api) => api.submitPersonalResult(1), props: { summary_id: 1 } },
+        { name: 'confirmSchedule', event: 'smart_summary_recurring_participation_confirmed', mock: 'post', run: (api) => api.confirmSchedule(7) },
+    ];
+
+    const mockFor = (m: 'post' | 'put' | 'del') => (m === 'post' ? mockPost : m === 'put' ? mockPut : mockDelete);
+
+    for (const c of cases) {
+        it(`${c.name}: emits ${c.event} once with DAP-266 spec props when envelope code===0`, async () => {
+            const { Dap } = await import('@octo/base');
+            const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+            const api = await import('../summaryApi');
+            mockFor(c.mock).mockResolvedValueOnce({ data: { code: 0, data: { template: {}, is_active: false } } });
+            await c.run(api);
+            const hits = track.mock.calls.filter((call) => call[0] === c.event);
+            expect(hits).toHaveLength(1);
+            // DAP-266：deleteCustomTopicTemplate / confirmSchedule 在本单元测试未透传 trackProps → 仍 {}；
+            //   其余按 result doc spec_props 补齐（template_name / summary_id）。
+            expect(hits[0][1]).toEqual(c.props ?? {});
+            track.mockRestore();
+        });
+
+        it(`${c.name}: does NOT emit ${c.event} when envelope code!==0`, async () => {
+            const { Dap } = await import('@octo/base');
+            const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+            const api = await import('../summaryApi');
+            mockFor(c.mock).mockResolvedValueOnce({ data: { code: 1, message: 'fail', data: null } });
+            await c.run(api);
+            expect(track.mock.calls.some((call) => call[0] === c.event)).toBe(false);
+            track.mockRestore();
+        });
+
+        it(`${c.name}: does NOT emit ${c.event} when code 缺省(网关信封)`, async () => {
+            const { Dap } = await import('@octo/base');
+            const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+            const api = await import('../summaryApi');
+            mockFor(c.mock).mockResolvedValueOnce({ data: { data: null } });
+            await c.run(api);
+            expect(track.mock.calls.some((call) => call[0] === c.event)).toBe(false);
+            track.mockRestore();
+        });
+    }
+
+    it('respondToTask(accept) emits invite_accepted (not rejected) on code===0', async () => {
+        const { Dap } = await import('@octo/base');
+        const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+        const api = await import('../summaryApi');
+        mockPost.mockResolvedValueOnce({ data: { code: 0, data: {} } });
+        await api.respondToTask(1, 'accept');
+        expect(track.mock.calls.filter((c) => c[0] === 'smart_summary_invite_accepted')).toHaveLength(1);
+        expect(track.mock.calls.some((c) => c[0] === 'smart_summary_invite_rejected')).toBe(false);
+        track.mockRestore();
+    });
+
+    it('respondToTask(reject) emits invite_rejected (not accepted) on code===0', async () => {
+        const { Dap } = await import('@octo/base');
+        const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+        const api = await import('../summaryApi');
+        mockPost.mockResolvedValueOnce({ data: { code: 0, data: {} } });
+        await api.respondToTask(1, 'reject');
+        expect(track.mock.calls.filter((c) => c[0] === 'smart_summary_invite_rejected')).toHaveLength(1);
+        expect(track.mock.calls.some((c) => c[0] === 'smart_summary_invite_accepted')).toBe(false);
+        track.mockRestore();
+    });
+
+    it('respondToTask does NOT emit when code!==0', async () => {
+        const { Dap } = await import('@octo/base');
+        const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+        const api = await import('../summaryApi');
+        mockPost.mockResolvedValueOnce({ data: { code: 1, data: null } });
+        await api.respondToTask(1, 'accept');
+        expect(track.mock.calls.some((c) => String(c[0]).startsWith('smart_summary_invite_'))).toBe(false);
+        track.mockRestore();
+    });
+
+    it('toggleSchedule(false) emits timer_disabled on code===0', async () => {
+        const { Dap } = await import('@octo/base');
+        const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+        const api = await import('../summaryApi');
+        mockPut.mockResolvedValueOnce({ data: { code: 0, data: { is_active: false } } });
+        await api.toggleSchedule(7, false);
+        expect(track.mock.calls.filter((c) => c[0] === 'smart_summary_timer_disabled')).toHaveLength(1);
+        track.mockRestore();
+    });
+
+    it('toggleSchedule(true) does NOT emit timer_disabled even on code===0 (re-enable edge)', async () => {
+        const { Dap } = await import('@octo/base');
+        const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
+        const api = await import('../summaryApi');
+        mockPut.mockResolvedValueOnce({ data: { code: 0, data: { is_active: true } } });
+        await api.toggleSchedule(7, true);
+        expect(track.mock.calls.some((c) => c[0] === 'smart_summary_timer_disabled')).toBe(false);
+        track.mockRestore();
     });
 });

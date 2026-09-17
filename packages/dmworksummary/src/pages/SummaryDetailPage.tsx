@@ -384,6 +384,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         if (result) {
             if (this.completedTrackedTaskId !== taskId) {
                 this.completedTrackedTaskId = taskId;
+                // DAP-266：result 已带。word_count / duration_seconds 在本状态变更回调无就近源
+                //   （无正文/生成耗时上下文，且此事件 spec 侧为后端口径）→ DEFER。
                 Dap.shared.track("smart_summary_completed", { result });
             }
         } else if (this.completedTrackedTaskId === taskId) {
@@ -1510,6 +1512,10 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
     handleRetry = async () => {
         const { detail } = this.state;
         if (!detail || this.taskId == null) return;
+        // DAP-218 M11：点击「重试」手势;与底层 regenerate 漏斗事件语义不同,独立计数。
+        // DAP-266：补 summary_id（this.taskId,上方已 guard 非空）+ prev_status（重试前的失败/未完成状态,detail.status 就近）。
+        //   source（触发来源）无就近枚举变量（详情页单入口,无 source 参数）→ DEFER。
+        Dap.shared.track("smart_summary_retried", { summary_id: this.taskId, prev_status: detail.status });
         if (detail.trigger_type === TriggerType.AGENT) {
             if (!supportsGenerationConfig(detail)) {
                 Toast.error(t("summary.generation.serviceUpgradeRequired"));
@@ -2065,8 +2071,9 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
             this.setState({ configuringForSchedule: true, regenerateMode: "full" });
             return;
         }
-        // 埋点 308:打开定时总结配置弹窗（隐私 props 恒空）。
-        Dap.shared.track("smart_summary_timer_dialog_opened", {});
+        // 埋点 308:打开定时总结配置弹窗。
+        // DAP-266：补 summary_id（上方 guard 保证 detail.task_id===this.taskId）。
+        Dap.shared.track("smart_summary_timer_dialog_opened", { summary_id: detail.task_id });
         const { scheduleItem } = this.state;
         // Blocking 1：is_active=false 的记录在交互上视为「无活动定时」，但仍回填
         // 原有周期/时刻，方便用户「重新启用」时不用从零填。保存逻辑（handleScheduleSave）
@@ -2460,6 +2467,9 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         const { detail } = this.state;
         if (!detail) return;
         if (!this.canRefineCurrentDetail()) return;
+        // DAP-218 M11：点击「继续优化」手势。
+        // DAP-266：补 summary_id（detail.task_id 就近）。
+        Dap.shared.track("smart_summary_continue_refine_clicked", { summary_id: detail.task_id });
         const referenceTask = {
             task_id: detail.task_id,
             title: detail.title,
@@ -2506,7 +2516,10 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
             : detail?.result?.content ?? personalResult?.content ?? '';
         if (!sourceContent.trim()) return;
         // 埋点 310:打开「转发到聊天」的会话选择面板（有正文可转发时才算打开）。
-        Dap.shared.track("smart_summary_forward_panel_opened", {});
+        // DAP-266：补 summary_id（本页 taskId）。
+        Dap.shared.track("smart_summary_forward_panel_opened", {
+            ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+        });
         const cleanContent = sourceContent.replace(/\[\d+\]/g, '').replace(/  +/g, ' ').trim();
         this.messaging.requestForward({
             content: cleanContent,
@@ -2519,8 +2532,12 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                 } else {
                     Toast.success(t("summary.detail.forwarded"));
                 }
-                // 埋点 311:总结已转发（只要不是全部失败即算一次成功转发；隐私 props 恒空）。
-                if (state.kind !== "all-failed") Dap.shared.track("smart_summary_forwarded", {});
+                // 埋点 311:总结已转发（只要不是全部失败即算一次成功转发）。
+                // DAP-266：补 summary_id + target_count（转发目标数,来自转发结果 state.total）。
+                if (state.kind !== "all-failed") Dap.shared.track("smart_summary_forwarded", {
+                    ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+                    target_count: state.total,
+                });
             },
             onError: (error) => Toast.error(t(
                 error instanceof SummaryForwardContextExpiredError
@@ -2952,6 +2969,7 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                 open={this.state.versionPanelOpen}
                 versions={ctx.versions}
                 currentVersion={ctx.currentVersion}
+                summaryId={this.taskId ?? undefined}
                 selectedResultId={this.state.showVersionDetailModal ? (this.state.versionDetail?.result_id ?? null) : null}
                 restoringResultId={ctx.restoringId}
                 retention={ctx.retention ?? undefined}
@@ -3027,6 +3045,11 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
             const ok = await copyToClipboard(content);
             if (this.unmounted) return;
             if (ok) {
+                // DAP-218 M11：复制总结内容成功。
+                // DAP-266：补 summary_id（本页 taskId）。mode（复制格式:纯文本/富文本/markdown）此处无就近枚举变量 → DEFER。
+                Dap.shared.track("smart_summary_copied", {
+                    ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+                });
                 Toast.success(this.context.t("summary.detail.copySuccess"));
             } else {
                 Toast.error(this.context.t("summary.detail.copyFailed"));
@@ -3084,6 +3107,13 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                     response: { data: { error: "create_unconfirmed" } },
                 });
             }
+            // DAP-218 M11：转在线文档成功(后端已创建、链接校验通过)命令式发。
+            //   收口在唯一成功点,覆盖 client/web-popup/被拦 三种打开分支,只计一次。
+            // DAP-266：补 summary_id + doc_id（convertSummaryToDoc 返回的 {docId,url}，标识非内容）。
+            Dap.shared.track("smart_summary_converted_to_doc", {
+                ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+                doc_id: value.docId,
+            });
             if (hostOpener) {
                 const openDocument = hostOpener;
                 // Client 模式：宿主侧导航；失败时不展示"创建失败"，创建已成功。
@@ -4472,6 +4502,12 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                                     if (this.state.versionPanelOpen) {
                                         this.handleCloseVersionPanel();
                                     } else {
+                                        // DAP-218 M11：打开「版本历史」面板手势。
+                                        // DAP-266：补 summary_id + version_count（版本列表长度,来自版本上下文）。
+                                        Dap.shared.track("smart_summary_version_history_opened", {
+                                            ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+                                            version_count: vctx.versions.length,
+                                        });
                                         this.setState({ versionPanelOpen: true });
                                     }
                                 }}

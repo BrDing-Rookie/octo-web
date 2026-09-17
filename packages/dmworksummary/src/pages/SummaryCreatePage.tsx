@@ -67,6 +67,7 @@ import {
     readAgentChatRequestId,
     writeAgentChatRequestId,
     clearAgentChatRequestId,
+    themeLenBucket,
 } from "../utils/summaryHelpers";
 import { trackAgentSummaryQuality } from "../utils/summaryQualityDiagnostics";
 import {
@@ -424,6 +425,13 @@ export default class SummaryCreatePage extends Component<
       editingTemplateDescription:
         getTemplateEditableFields(template).description,
         });
+        // 预设模板卡「编辑」弹窗成功打开时上报;自定义模板的编辑不计入本事件(spec 限定预设)。
+        // template_name 取被编辑预设的当前展示名,用于与保存事件配对识别同一条模板。
+        if (!template.is_custom) {
+            Dap.shared.track("smart_summary_preset_template_edit_opened", {
+                template_name: template.label,
+            });
+        }
     };
 
     private canCreateCustomTemplate = () => {
@@ -438,11 +446,19 @@ export default class SummaryCreatePage extends Component<
 
     private handleCustomTemplateCreate = () => {
         if (!this.canCreateCustomTemplate()) return;
+        // 已达上限时上面已 return,入口不可见不触发;此处 guard 通过、弹窗进入创建态才计一次。
+        // template_count_before 就近取当前已有自定义模板数,用于观察临近 30 上限时的打开行为。
+        const templateCountBefore = this.state.templates
+            .map((tpl) => resolveTemplate(tpl, this.context.t))
+            .filter((tpl) => tpl.is_custom).length;
         this.setState({
             editingTemplate: null,
             creatingCustomTemplate: true,
             editingTemplateLabel: "",
             editingTemplateDescription: "",
+        });
+        Dap.shared.track("smart_summary_custom_template_create_opened", {
+            template_count_before: templateCountBefore,
         });
     };
 
@@ -493,10 +509,18 @@ export default class SummaryCreatePage extends Component<
         this.setState({ savingTemplate: true });
         try {
             if (creatingCustomTemplate) {
-        const template = await api.createCustomTopicTemplate({
-          label,
-          description,
-        });
+        // DAP-266：template_count_after = 创建成功后的自定义模板总数（现有 + 1）。
+        //   与本页 canCreateCustomTemplate 同口径：先 resolveTemplate 再按 is_custom 计数。
+        const customCountBefore = this.state.templates
+            .map((tpl) => resolveTemplate(tpl, this.context.t))
+            .filter((tpl) => tpl.is_custom).length;
+        const template = await api.createCustomTopicTemplate(
+          {
+            label,
+            description,
+          },
+          { template_count_after: customCountBefore + 1 }
+        );
                 this.appendTemplateToState(template);
                 // 真创建成功后才 emit(§started-vs-created):挂在 Save 按钮点击上会把
                 // 被服务端拒绝/取消的尝试也计一次创建,虚高成功率。带 object_id 供归因。
@@ -540,7 +564,14 @@ export default class SummaryCreatePage extends Component<
         if (!target?.is_custom) return;
         this.setState({ savingTemplate: true });
         try {
-            await api.deleteCustomTopicTemplate(target.id);
+            // DAP-266：template_count_after = 删除成功后的自定义模板总数（现有 − 1）。
+            //   与 canCreateCustomTemplate 同口径：先 resolveTemplate 再按 is_custom 计数。
+            const customCountBefore = this.state.templates
+                .map((tpl) => resolveTemplate(tpl, this.context.t))
+                .filter((tpl) => tpl.is_custom).length;
+            await api.deleteCustomTopicTemplate(target.id, {
+                template_count_after: Math.max(0, customCountBefore - 1),
+            });
             this.removeTemplateFromState(target.id);
             if (this.state.editingTemplate?.id === target.id) {
                 this.clearTemplateEditor();
@@ -585,8 +616,12 @@ export default class SummaryCreatePage extends Component<
     };
 
     private handleTemplateClick = (template: TopicTemplate) => {
-        // 埋点 296:套用主题模板（内置卡片与自定义卡片都汇流到此，隐私 props 恒空）。
-        Dap.shared.track("smart_summary_template_applied", {});
+        // 埋点 296:套用主题模板（内置卡片与自定义卡片都汇流到此）。
+        // DAP-266：补 template_type（自定义/预设,由 template.is_custom 就近判定）+ source（应用来源=create_page）。
+        Dap.shared.track("smart_summary_template_applied", {
+            template_type: template.is_custom ? "custom" : "preset",
+            source: "create_page",
+        });
         const { t: translate } = this.context;
         const { text, range } = computeTemplateSelection(template, {
             topic: translate("summary.templates.custom.promptTopic"),
@@ -710,12 +745,18 @@ export default class SummaryCreatePage extends Component<
         // 共用一个收口点才能保证计数与 props 一致
         // (见二审 P1「smart_summary_started 双发」)。此处只把维度 props 透传给 createSummary。
         // trigger_mode 恒为 'normal'(agent 分支走 handleAgentSubmit,永不到此)。
+        // DAP-266：补 spec 维度 mode / channel_count / channel_ids / participant_count（就近取自
+        //   this.state.mode 与已选聊天/成员）。template_source（预设/自定义来源枚举）此页无就近字段 → DEFER。
         const startedProps = {
             object_id: this.props.channel?.channelID,
             source: this.props.source,
             entry_point: this.props.source,
             entry_source: this.props.source,
             trigger_mode: this.state.mode,
+            mode: this.state.mode,
+            channel_count: selectedChats.length,
+            channel_ids: selectedChats.map((c) => c.chat_id),
+            participant_count: selectedMembers.length,
         };
 
         this.setState({ submitting: true, error: null });
@@ -1025,6 +1066,11 @@ export default class SummaryCreatePage extends Component<
                         onClick={(e) => {
                             // 阻止事件冒泡触发卡片 onClick (toggle SidePanel)
                             e.stopPropagation();
+                            // DAP-218 M11：移除 Agent 会话引用的历史总结手势(与 added 成对)。
+                            // DAP-266：补 referenced_summary_id（被移除引用的 task_id,标识非内容）。
+                            Dap.shared.track("smart_summary_agent_reference_removed", {
+                                referenced_summary_id: referencedTask.task_id,
+                            });
                             // 移除引用同时强制关闭 SidePanel(引用没了没意义再显示)
                             this.setState({ referencedTask: null, sidePanelOpen: false });
                             // 引用同步清持久化，避免 refresh 后又回填。
@@ -1106,12 +1152,18 @@ export default class SummaryCreatePage extends Component<
 
             // smart_summary_started 由 createAgentSummary 在 envelope code===0 后补发(见二审 P1/P2-2),
             // 与 normal 模式同一收口口径;trigger_mode 固定 'agent'。
+            // DAP-266：补 mode / channel_count / channel_ids / participant_count（agent 无参与者入口→0）。
+            //   template_source 此页无就近来源枚举 → DEFER。
             const result = await api.createAgentSummary(params, {
                 object_id: this.props.channel?.channelID,
                 source: this.props.source,
                 entry_point: this.props.source,
                 entry_source: this.props.source,
         trigger_mode: "agent",
+                mode: "agent",
+                channel_count: selectedChats.length,
+                channel_ids: selectedChats.map((c) => c.chat_id),
+                participant_count: 0,
             });
             markAgentSummaryNotificationEligible(result.task_id);
 
@@ -1341,7 +1393,10 @@ export default class SummaryCreatePage extends Component<
                       clearTimeout(this.themeTrackTimer);
                                 this.themeTrackTimer = setTimeout(() => {
                       if (nextTopic.trim())
-                        Dap.shared.track("smart_summary_theme_input", {});
+                        // DAP-266：补 theme_len_bucket（长度分桶,非正文）。used_voice 此输入回调无语音标志 → DEFER。
+                        Dap.shared.track("smart_summary_theme_input", {
+                          theme_len_bucket: themeLenBucket(nextTopic.trim().length),
+                        });
                                 }, 600);
                             }}
                             onFocus={this.handleInputFocus}
