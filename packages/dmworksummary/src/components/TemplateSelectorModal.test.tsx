@@ -165,6 +165,8 @@ describe("TemplateSelectorModal", () => {
       templateId: "weekly",
       label: "Weekly report",
       requirement: "List progress and risks",
+      // DAP-271 finding 6：scope 现透传 isCustom（预置模板=false）供 template_type/template_source 补齐。
+      isCustom: false,
       version: 3,
     });
   });

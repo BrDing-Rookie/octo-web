@@ -483,12 +483,16 @@ export default function SummaryWorkbenchFeature({
       entry_point: source,
       entry_source: source,
       trigger_mode: triggerMode,
-      // DAP-266：补 spec 维度 mode / channel_count / channel_ids / participant_count（就近取自 workbench.scope）。
-      //   template_source（预设/自定义来源枚举）scope.template 无该区分字段 → DEFER。
+      // DAP-266：补 spec 维度 mode / channel_count / participant_count（就近取自 workbench.scope）。
+      // DAP-271 finding 2：spec 确认需 channel_ids → 按显式键把 chatId 逗号连接成字符串(primitive,过得了
+      //   sanitizer)，不泛化放行数组。finding 6：template_source 由 scope.template.isCustom 就近派生。
       mode: triggerMode,
       channel_count: workbench.scope.selectedChannels.length,
-      channel_ids: workbench.scope.selectedChannels.map((c) => c.chatId),
+      channel_ids: workbench.scope.selectedChannels.map((c) => c.chatId).join(","),
       participant_count: workbench.scope.participants.length,
+      ...(workbench.scope.template
+        ? { template_source: workbench.scope.template.isCustom ? "custom" : "preset" }
+        : {}),
     });
     window.dispatchEvent(
       new CustomEvent("chat-summary-created", {
@@ -867,9 +871,12 @@ export default function SummaryWorkbenchFeature({
       // P1-4 (yujiawei review 5087124100): the workbench path lost this event —
       // its sole sink was the legacy SummaryCreatePage. Same payload shape as
       // the legacy emitter: no content, intent only.
-      // DAP-266：补 source（应用来源=workbench）。template_type（预设/自定义）scope.template
-      //   无该区分字段 → DEFER。
-      Dap.shared.track("smart_summary_template_applied", { source: "workbench" });
+      // DAP-266：补 source（应用来源=workbench）。
+      // DAP-271 finding 6：template_type 由 template.isCustom 就近派生（scope 已透传 is_custom）。
+      Dap.shared.track("smart_summary_template_applied", {
+        template_type: template.isCustom ? "custom" : "preset",
+        source: "workbench",
+      });
     });
   };
 

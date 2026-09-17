@@ -114,6 +114,11 @@ interface SummaryCreatePageProps {
 interface SummaryCreatePageState {
     topic: string;
     appliedTemplateLabel: string;
+    /**
+     * DAP-271 finding 6：最近应用的模板来源(自定义/预置)。仅用于 smart_summary_started 的
+     * template_source 维度补齐（枚举，不含名称/正文）。套用模板时置位、重选/清空时清空。
+     */
+    appliedTemplateSource: "custom" | "preset" | null;
     customTemplateLimit: number;
   mode: "normal" | "agent";
     templates: ResolvableTemplate[];
@@ -178,6 +183,7 @@ export default class SummaryCreatePage extends Component<
     state: SummaryCreatePageState = {
         topic: "",
         appliedTemplateLabel: "",
+        appliedTemplateSource: null,
         customTemplateLimit: 30,
         mode: this.props.initialMode === "agent" ? "agent" : "normal",
         templates: TOPIC_TEMPLATES,
@@ -618,8 +624,10 @@ export default class SummaryCreatePage extends Component<
     private handleTemplateClick = (template: TopicTemplate) => {
         // 埋点 296:套用主题模板（内置卡片与自定义卡片都汇流到此）。
         // DAP-266：补 template_type（自定义/预设,由 template.is_custom 就近判定）+ source（应用来源=create_page）。
+        // DAP-271 finding 6：记住来源(custom/preset)供后续 smart_summary_started 补 template_source。
+        const templateSource: "custom" | "preset" = template.is_custom ? "custom" : "preset";
         Dap.shared.track("smart_summary_template_applied", {
-            template_type: template.is_custom ? "custom" : "preset",
+            template_type: templateSource,
             source: "create_page",
         });
         const { t: translate } = this.context;
@@ -634,6 +642,7 @@ export default class SummaryCreatePage extends Component<
         {
           topic: text,
           appliedTemplateLabel: template.label,
+          appliedTemplateSource: templateSource,
           templatePlaceholderRange: [start, end],
         },
         this.autoResizeTextarea
@@ -650,6 +659,7 @@ export default class SummaryCreatePage extends Component<
         {
           topic: text,
           appliedTemplateLabel: template.label,
+          appliedTemplateSource: templateSource,
           templatePlaceholderRange: null,
         },
         this.autoResizeTextarea
@@ -663,7 +673,7 @@ export default class SummaryCreatePage extends Component<
 
     private handleReselectTemplate = () => {
     this.setState(
-      { topic: "", appliedTemplateLabel: "", templatePlaceholderRange: null },
+      { topic: "", appliedTemplateLabel: "", appliedTemplateSource: null, templatePlaceholderRange: null },
       this.autoResizeTextarea
     );
         setTimeout(() => {
@@ -745,8 +755,11 @@ export default class SummaryCreatePage extends Component<
         // 共用一个收口点才能保证计数与 props 一致
         // (见二审 P1「smart_summary_started 双发」)。此处只把维度 props 透传给 createSummary。
         // trigger_mode 恒为 'normal'(agent 分支走 handleAgentSubmit,永不到此)。
-        // DAP-266：补 spec 维度 mode / channel_count / channel_ids / participant_count（就近取自
-        //   this.state.mode 与已选聊天/成员）。template_source（预设/自定义来源枚举）此页无就近字段 → DEFER。
+        // DAP-266：补 spec 维度 mode / channel_count / participant_count（就近取自
+        //   this.state.mode 与已选聊天/成员）。template_source（预设/自定义来源枚举）见下 appliedTemplateSource。
+        // DAP-271 finding 2：spec_props(权威 result doc) 确认 smart_summary_started 需 channel_ids。数组过不了
+        //   Dap sanitizer(仅留 primitive) → 按显式白名单键做**针对性安全编码**:把已选聊天 chat_id 逗号连接成
+        //   字符串(primitive,可存活),不泛化放行数组进 sanitizer。channel_count 同时保留。
         const startedProps = {
             object_id: this.props.channel?.channelID,
             source: this.props.source,
@@ -755,8 +768,9 @@ export default class SummaryCreatePage extends Component<
             trigger_mode: this.state.mode,
             mode: this.state.mode,
             channel_count: selectedChats.length,
-            channel_ids: selectedChats.map((c) => c.chat_id),
+            channel_ids: selectedChats.map((c) => c.chat_id).join(","),
             participant_count: selectedMembers.length,
+            ...(this.state.appliedTemplateSource ? { template_source: this.state.appliedTemplateSource } : {}),
         };
 
         this.setState({ submitting: true, error: null });
@@ -1152,8 +1166,9 @@ export default class SummaryCreatePage extends Component<
 
             // smart_summary_started 由 createAgentSummary 在 envelope code===0 后补发(见二审 P1/P2-2),
             // 与 normal 模式同一收口口径;trigger_mode 固定 'agent'。
-            // DAP-266：补 mode / channel_count / channel_ids / participant_count（agent 无参与者入口→0）。
-            //   template_source 此页无就近来源枚举 → DEFER。
+            // DAP-266：补 mode / channel_count / participant_count（agent 无参与者入口→0）。
+            //   template_source 此页 agent 分支无就近来源枚举 → DEFER。
+            // DAP-271 finding 2：channel_ids 按 spec 以逗号连接的字符串编码(数组过不了 sanitizer)。
             const result = await api.createAgentSummary(params, {
                 object_id: this.props.channel?.channelID,
                 source: this.props.source,
@@ -1162,7 +1177,7 @@ export default class SummaryCreatePage extends Component<
         trigger_mode: "agent",
                 mode: "agent",
                 channel_count: selectedChats.length,
-                channel_ids: selectedChats.map((c) => c.chat_id),
+                channel_ids: selectedChats.map((c) => c.chat_id).join(","),
                 participant_count: 0,
             });
             markAgentSummaryNotificationEligible(result.task_id);

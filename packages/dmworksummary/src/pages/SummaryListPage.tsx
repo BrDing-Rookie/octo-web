@@ -251,7 +251,7 @@ export default class SummaryListPage extends Component<
         return { items: resp.items, total: resp.total };
     }
 
-    async loadData(opts: { silent?: boolean } = {}) {
+    async loadData(opts: { silent?: boolean } = {}): Promise<number | undefined> {
         // Bump-and-capture sequence: this loadData's response is only allowed
         // to commit if no newer loadData/filter change has started meanwhile.
         // Extended in round-7 so loadMore also captures pre-await and drops
@@ -302,14 +302,14 @@ export default class SummaryListPage extends Component<
                 origin_channel_id: this.props.channelId || undefined,
             };
             const resp = await api.listSummaries(params);
-            if (seq !== this.loadDataSeq) return;
+            if (seq !== this.loadDataSeq) return undefined;
             // Post-await mount check (round-8 yujiawei P2-3): the entry
             // isMounted_ guard cannot cover the await window; React 18 will
             // drop setState on an unmounted fiber but the callback would
             // still be scheduled. Also bind the response to the Space that
             // issued it so an unmounted/late list cannot commit stale data.
       if (!this.isMounted_ || WKApp.shared.currentSpaceId !== requestSpaceId)
-        return;
+        return undefined;
             // #1359 只有全局列表拥有写 NavRail badge 的职责。后端 count 虽然是
             // Space 级，但聊天侧栏是嵌入式 channel 实例，不应改写全局导航状态。
             // 用发请求前领的 ticket 提交：期间若有更新的读取发出，本次就是陈旧
@@ -353,21 +353,25 @@ export default class SummaryListPage extends Component<
                 if (this.isMounted_) this.maybeStartBatchPoll();
         }
       );
+      // DAP-271 finding 6：返回本次已提交的结果总数,供 handleKeywordChange 就近取 has_result
+      //   (只有真正取得搜索结果才打点)。被更新请求超越/卸载/失败的分支返回 undefined → 不打点。
+      return resp.total;
         } catch (err: any) {
-            if (seq !== this.loadDataSeq) return;
-            if (!this.isMounted_) return;
+            if (seq !== this.loadDataSeq) return undefined;
+            if (!this.isMounted_) return undefined;
             // Background refresh (silent=true) must not surface a network
             // banner to an idle user — just clear loading and leave the last
             // good list visible. A user-triggered loadData still shows the
             // banner + Retry so they can act on the failure.
             if (opts.silent) {
                 this.setState({ loading: false });
-                return;
+                return undefined;
             }
       this.setState({
         error: err.message || t("summary.common.loadingFailed"),
         loading: false,
       });
+      return undefined;
         } finally {
             // Sequence-owned clear (round-9 yujiawei P2-2): with two
             // overlapping loadData calls, the older stale one returning
@@ -581,15 +585,26 @@ export default class SummaryListPage extends Component<
         if (this.searchTimer) clearTimeout(this.searchTimer);
         this.searchTimer = setTimeout(() => {
             // 埋点 291:去抖后「发生了一次搜索」，仅在有关键词时发，绝不采关键词值。
-            // DAP-266：has_result 需在 loadData 拿到结果后才知，emit 时点(搜索触发前)无就近结果数 → DEFER。
-            if (value.trim()) Dap.shared.track("smart_summary_searched", {});
-            this.setState({ page: 1 }, () => this.loadData());
+            // DAP-271 finding 6：has_result 需在 loadData 拿到结果后才知——移到结果返回后采集。
+            //   只在本次搜索关键词非空、且 loadData 返回了有效结果总数(未被更新请求超越/未失败)时打点;
+            //   loadData 返回 undefined(超越/卸载/失败)则不打点(与 mcp/skillmarket 同口径,失败不伪装零命中)。
+            const searched = value.trim();
+            this.setState({ page: 1 }, () => {
+                void this.loadData().then((total) => {
+                    if (searched && total !== undefined) {
+                        Dap.shared.track("smart_summary_searched", {
+                            has_result: total > 0,
+                        });
+                    }
+                });
+            });
         }, 400);
     };
 
     handleDelete = async (taskId: number) => {
         try {
-            await api.deleteSummary(taskId);
+            // DAP-271 finding 6：source 受控枚举 'list'（列表页删除入口）。
+            await api.deleteSummary(taskId, "list");
             Toast.success(t("summary.list.deleteSuccess"));
             // Always reload from page 1 after delete to avoid losing earlier pages
             this.loadData();
@@ -667,7 +682,8 @@ export default class SummaryListPage extends Component<
                 this.handleCardClick(taskId);
                 return;
             }
-            await api.regenerateSummary(taskId);
+            // DAP-271 finding 6：prev_status 就近取自已查到的 task.status（重生成前状态）。
+            await api.regenerateSummary(taskId, undefined, task?.status);
             Toast.success(t("summary.list.retrySuccess"));
             this.loadData();
         } catch (err: any) {
@@ -677,7 +693,8 @@ export default class SummaryListPage extends Component<
 
     handleCancel = async (taskId: number) => {
         try {
-            await api.cancelSummary(taskId);
+            // DAP-271 finding 6：source 受控枚举 'list'（列表页取消入口）。
+            await api.cancelSummary(taskId, "list");
             Toast.success(t("summary.list.cancelSuccess"));
             this.loadData();
         } catch (err: any) {

@@ -1099,7 +1099,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         if (this.taskId == null) return;
         const requestTaskId = this.taskId;
         try {
-            await api.deleteSummary(this.taskId);
+            // DAP-271 finding 6：source 受控枚举 'detail'（详情页删除入口）。
+            await api.deleteSummary(this.taskId, "detail");
             if (this.taskId !== requestTaskId) return;
             Toast.success(t("summary.list.deleteSuccess"));
             if (this.props.onAfterMutate) {
@@ -1527,7 +1528,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         }
         try {
             this.setState({ regenerateSubmitting: true });
-            await api.regenerateSummary(this.taskId);
+            // DAP-271 finding 6：prev_status 就近取自 detail.status（重生成前状态）。
+            await api.regenerateSummary(this.taskId, undefined, detail.status);
             this.setState({ regenerateSubmitting: false });
             this.loadDetail();
         } catch (err: any) {
@@ -1769,7 +1771,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                 }
             } else {
                 if (operateOnTeamSummary) {
-                    await api.regenerateSummary(requestTaskId, { topic: trimmed });
+                    // DAP-271 finding 6：prev_status 就近取自 detail.status（重生成前状态）。
+                    await api.regenerateSummary(requestTaskId, { topic: trimmed }, detail?.status);
                     if (this.taskId !== requestTaskId) return;
                     Toast.success(t("summary.detail.regenerateStarted"));
                     this.resetTeamSummaryStreamForNewRun(requestTaskId);
@@ -1785,7 +1788,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                     } as Pick<SummaryDetailPageState, "showRegenerateModal" | "detail"> : { showRegenerateModal: false } as Pick<SummaryDetailPageState, "showRegenerateModal">);
                     this.loadDetail();
                 } else if (detail?.summary_mode === SummaryMode.BY_PERSON && this.isMultiCollab()) {
-                    await api.regeneratePersonalSummary(requestTaskId, { topic: trimmed });
+                    // DAP-271 finding 6：prev_status 就近取自 detail.status。
+                    await api.regeneratePersonalSummary(requestTaskId, { topic: trimmed }, detail?.status);
                     if (this.taskId !== requestTaskId) return;
                     Toast.success(t("summary.detail.regenerateStarted"));
                     this.resetSummaryStreamForNewRun(requestTaskId);
@@ -1811,7 +1815,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                     this.loadPersonalResult(seq);
                     this.loadMembers(seq);
                 } else {
-                    await api.regenerateSummary(requestTaskId, this.generationConfigPayload(trimmed));
+                    // DAP-271 finding 6：prev_status 就近取自 detail.status。
+                    await api.regenerateSummary(requestTaskId, this.generationConfigPayload(trimmed), detail?.status);
                     if (this.taskId !== requestTaskId) return;
                     Toast.success(t("summary.detail.regenerateStarted"));
                     if (detail?.summary_mode === SummaryMode.BY_PERSON) {
@@ -1853,7 +1858,7 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         const requestTaskId = this.taskId;
         this.setState({ restoringVersionId: version.result_id });
         try {
-            await api.restoreSummaryVersion(requestTaskId, version.result_id);
+            await api.restoreSummaryVersion(requestTaskId, version.result_id, version.version);
             if (this.taskId !== requestTaskId) return false;
             // The entry-gate at the four handleStartEdit* handlers already
             // refuses to open an editor while a restore is in flight, so
@@ -1901,7 +1906,7 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
             workflowDisplayIndex: -1,
         });
         try {
-            await api.restorePersonalSummaryVersion(requestTaskId, version.result_id);
+            await api.restorePersonalSummaryVersion(requestTaskId, version.result_id, version.version);
             if (this.taskId !== requestTaskId) return false;
             // Defence in depth (see the team-restore twin above); the
             // entry-gate at handleStartEdit* already refuses to open an
@@ -2042,7 +2047,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
     handleCancel = async () => {
         if (this.taskId == null) return;
         try {
-            await api.cancelSummary(this.taskId);
+            // DAP-271 finding 6：source 受控枚举 'detail'（详情页取消入口）。
+            await api.cancelSummary(this.taskId, "detail");
             Toast.success(t("summary.detail.cancelSuccess"));
             this.loadDetail();
         } catch (err: any) {
@@ -2421,7 +2427,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         if (!scheduleItem) return;
         this.setState({ scheduleDisabling: true });
         try {
-            const updated = await api.toggleSchedule(scheduleItem.schedule_id, false);
+            // DAP-271 finding 6：把入口快照 requestTaskId 作为 summary_id 透传给 timer_disabled 事件。
+            const updated = await api.toggleSchedule(scheduleItem.schedule_id, false, requestTaskId ?? undefined);
             // 迟到（已切 task）：不回显新 task，仅复位本地 loading 标志。
             if (this.taskId !== requestTaskId) {
                 this.setState({ scheduleDisabling: false });
@@ -2515,10 +2522,13 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
             ? personalResult?.content ?? detail?.result?.content ?? ''
             : detail?.result?.content ?? personalResult?.content ?? '';
         if (!sourceContent.trim()) return;
+        // DAP-271 finding 5：入口捕获源 taskId 快照。转发面板 onComplete 是异步回调,期间可切总结,
+        //   forwarded 成功事件必须归因到发起转发的那条(A),不读可变的 this.taskId。
+        const sourceTaskId = this.taskId;
         // 埋点 310:打开「转发到聊天」的会话选择面板（有正文可转发时才算打开）。
         // DAP-266：补 summary_id（本页 taskId）。
         Dap.shared.track("smart_summary_forward_panel_opened", {
-            ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+            ...(sourceTaskId != null ? { summary_id: sourceTaskId } : {}),
         });
         const cleanContent = sourceContent.replace(/\[\d+\]/g, '').replace(/  +/g, ' ').trim();
         this.messaging.requestForward({
@@ -2534,8 +2544,9 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                 }
                 // 埋点 311:总结已转发（只要不是全部失败即算一次成功转发）。
                 // DAP-266：补 summary_id + target_count（转发目标数,来自转发结果 state.total）。
+                // DAP-271 finding 5：summary_id 用入口快照 sourceTaskId。
                 if (state.kind !== "all-failed") Dap.shared.track("smart_summary_forwarded", {
-                    ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+                    ...(sourceTaskId != null ? { summary_id: sourceTaskId } : {}),
                     target_count: state.total,
                 });
             },
@@ -3038,6 +3049,9 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
     handleCopyContent = async (content: string, key: string) => {
         const text = content?.trim();
         if (!text) return;
+        // DAP-271 finding 5：入口捕获源 taskId 快照。await copyToClipboard 期间用户可能切到另一条总结,
+        //   this.taskId 会变成 B；成功事件必须归因到发起复制的那条(A),故用快照而非可变实例字段。
+        const sourceTaskId = this.taskId;
         this.setState({ copyingKey: key });
         try {
             // 复用 @octo/base 的 copyToClipboard：它已经处理了 execCommand 降级、
@@ -3048,7 +3062,7 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
                 // DAP-218 M11：复制总结内容成功。
                 // DAP-266：补 summary_id（本页 taskId）。mode（复制格式:纯文本/富文本/markdown）此处无就近枚举变量 → DEFER。
                 Dap.shared.track("smart_summary_copied", {
-                    ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+                    ...(sourceTaskId != null ? { summary_id: sourceTaskId } : {}),
                 });
                 Toast.success(this.context.t("summary.detail.copySuccess"));
             } else {
@@ -3075,6 +3089,9 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         // 双开两个总结各点一下会并发两次转文档请求、创建两份文档。已有请求在飞时直接忽略。
         if (this.convertInFlight) return;
         this.convertInFlight = true;
+        // DAP-271 finding 5：入口捕获源 taskId 快照。转文档为异步(await 期间可切总结),成功事件
+        //   必须归因到发起转换的那条,不读可变的 this.taskId。
+        const sourceTaskId = this.taskId;
 
         let hostOpener: ReturnType<typeof getDocsDocumentOpener> = undefined;
         let documentOrigin = "";
@@ -3110,8 +3127,9 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
             // DAP-218 M11：转在线文档成功(后端已创建、链接校验通过)命令式发。
             //   收口在唯一成功点,覆盖 client/web-popup/被拦 三种打开分支,只计一次。
             // DAP-266：补 summary_id + doc_id（convertSummaryToDoc 返回的 {docId,url}，标识非内容）。
+            // DAP-271 finding 5：summary_id 用入口快照 sourceTaskId，避免异步完成时归因到已切换的总结。
             Dap.shared.track("smart_summary_converted_to_doc", {
-                ...(this.taskId != null ? { summary_id: this.taskId } : {}),
+                ...(sourceTaskId != null ? { summary_id: sourceTaskId } : {}),
                 doc_id: value.docId,
             });
             if (hostOpener) {
@@ -4312,7 +4330,8 @@ export default class SummaryDetailPage extends Component<SummaryDetailPageProps,
         if (!scheduleItem) return;
         this.setState({ confirmingSchedule: true });
         try {
-            await api.confirmSchedule(scheduleItem.schedule_id);
+            // DAP-271 finding 6：把入口快照 requestTaskId 作为 summary_id 透传给 recurring_participation_confirmed。
+            await api.confirmSchedule(scheduleItem.schedule_id, requestTaskId ?? undefined);
             // schedule 邀请也是 attention_count 的组成部分；确认成功后
             // 立即按当前 Space 重算，即使等待期间用户已切到另一条总结。
             refreshSummaryAttentionBadge();

@@ -125,6 +125,9 @@ export function topicTemplateToWorkbenchScope(
     templateId: template.id,
     label: template.label,
     requirement: resolvedTemplate.text,
+    // DAP-271 finding 6：透传 is_custom（自定义模板，含被覆盖的预置=custom 语义仍按 is_custom 判定）
+    //   到 workbench scope，供 template_applied.template_type / started.template_source 补齐。
+    isCustom: Boolean(template.is_custom),
     ...(typeof version === "number" ? { version } : {}),
   };
 }

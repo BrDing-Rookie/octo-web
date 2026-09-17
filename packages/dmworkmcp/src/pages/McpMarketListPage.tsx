@@ -426,7 +426,10 @@ export default class McpMarketListPage extends Component<
         items: [],
         error: t(mcpListErrorI18nKey(err)),
       });
-      return 0;
+      // DAP-271 finding 4：请求失败返回 undefined(明确「无有效结果」),与「成功但零命中」(return 0)
+      //   区分开——handleKeyword 只在 total !== undefined 时打点,故失败不再被伪装成 has_result=false 的
+      //   零命中搜索。只有真正取得搜索结果(含成功零命中)才发 market_searched。
+      return undefined;
     }
   }
 
