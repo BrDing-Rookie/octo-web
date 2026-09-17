@@ -33,19 +33,33 @@ const KNOWN_FILE_TYPES = new Set<string>([
 ]);
 
 /**
+ * 把一个「后缀候选」钳制成上报用的低基数 `file_type`。
+ *
+ * 规则:`toLowerCase().trim()`;空 → `""`;校验为短纯字母数字 token
+ * (`/^[a-z0-9]{1,8}$/`,排除 CJK / 空格 / 多段自由文本 / 超长串)→ 不满足一律 `"other"`;
+ * 命中白名单原样返回,否则 `"other"`。任何情况下都不透传原始文件名片段。
+ *
+ * 入参已是「裸后缀」(不含点),不做 `lastIndexOf(".")` 切分——这样既可服务
+ * `classifyDownloadFileType`(先切后缀再钳制),也可被结构化 `FileContent.extension`
+ * (本就是裸后缀,无点)直接调用而不会被误判为 `""`(见 message_file_saved_to_drive)。
+ */
+export function clampFileType(candidate: string): string {
+    const c = candidate.toLowerCase().trim();
+    if (!c) return "";
+    if (!/^[a-z0-9]{1,8}$/.test(c)) return "other";
+    return KNOWN_FILE_TYPES.has(c) ? c : "other";
+}
+
+/**
  * 从文件名推导上报用的 `file_type`,把用户可控的文件名正文钳制成低基数枚举。
  *
- * 规则:取最后一个点之后子串 → `toLowerCase().trim()`;校验为短纯字母数字 token
- * (`/^[a-z0-9]{1,8}$/`,排除 CJK / 空格 / 多段自由文本 / 超长串);命中白名单原样返回,
- * 否则返回 `"other"`;无点 / 空后缀返回 `""`(保持原语义)。任何情况下都不透传原始文件名片段。
+ * 规则:取最后一个点之后子串,再交给 `clampFileType` 钳制(白名单 / `other` / `""`);
+ * 无点 / 点在首位返回 `""`(保持原语义)。任何情况下都不透传原始文件名片段。
  */
 export function classifyDownloadFileType(filename: string): string {
     const lastDot = filename.lastIndexOf(".");
     if (lastDot <= 0) return "";
-    const candidate = filename.slice(lastDot + 1).toLowerCase().trim();
-    if (!candidate) return "";
-    if (!/^[a-z0-9]{1,8}$/.test(candidate)) return "other";
-    return KNOWN_FILE_TYPES.has(candidate) ? candidate : "other";
+    return clampFileType(filename.slice(lastDot + 1));
 }
 
 /**

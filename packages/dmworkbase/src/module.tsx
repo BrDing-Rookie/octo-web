@@ -27,6 +27,7 @@ import { isChannelSearchEnabled } from "./features/channelSearch/feature";
 import { voiceSettingsStore } from "./Service/VoiceSettingsStore";
 import ChatSearchEntryButton from "./features/channelSearch/ChatSearchEntryButton";
 import { isElectronPowered } from "./electron/desktopBridge";
+import { clampFileType } from "./Utils/download";
 import { ChannelSettingRouteData } from "./Components/ChannelSetting/context";
 import { InputEdit } from "./Components/InputEdit";
 import { ListItem, ListItemTip } from "./Components/ListItem";
@@ -1601,13 +1602,15 @@ export default class BaseModule implements IModule {
             void WKApp.saveMessageToDriveAt?.(params).then(() => {
               Toast.success(t("base.messageFile.saveToDriveSuccess"));
               // message_file_saved_to_drive(DAP-218 A 类):仅在存盘成功回调里计一次。
-              //   channel_id 复用上方已归一的 channelID(Person 已 stripSpacePrefix);file_type/size
-              //   取自文件消息内容(FileContent),不含文件名/正文。
+              //   channel_id 复用上方已归一的 channelID(Person 已 stripSpacePrefix);size 取自
+              //   文件消息内容(FileContent)。file_type 经 clampFileType 钳制到已知扩展名白名单
+              //   (与 message_file_downloaded 同口径):命中原样 / 非白名单一律 "other" / 空则 ""
+              //   ——绝不透传 FileContent.extension 里的原始文件名后缀片段(隐私红线)。
               const fileContent = message.content as FileContent;
               Dap.shared.track("message_file_saved_to_drive", {
                 channel_id: channelID,
                 channel_type: message.channel.channelType,
-                file_type: fileContent?.extension || "",
+                file_type: clampFileType(fileContent?.extension || ""),
                 size: fileContent?.size ?? 0,
               });
             }).catch(() => undefined);
