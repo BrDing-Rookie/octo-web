@@ -432,10 +432,14 @@ export default class SummaryCreatePage extends Component<
         getTemplateEditableFields(template).description,
         });
         // 预设模板卡「编辑」弹窗成功打开时上报;自定义模板的编辑不计入本事件(spec 限定预设)。
-        // template_name 取被编辑预设的当前展示名,用于与保存事件配对识别同一条模板。
+        // DAP-271 P1 隐私红线:**不上报用户自由输入的模板名称**(被个人覆盖的预设 label 可含客户/项目/私人内容)。
+        //   改用非 PII 的 template_id(TopicTemplate.id,稳定不透明标识)+ is_custom=false(由 !is_custom 守卫保证),
+        //   与 preset/custom_template_edited、custom_template_created 同一条已留档 spec 偏离(红线优先,owner 已知悉);
+        //   template_id 比自由文本名称更能稳定与保存事件配对识别同一条模板,功能不降反升。
         if (!template.is_custom) {
             Dap.shared.track("smart_summary_preset_template_edit_opened", {
-                template_name: template.label,
+                template_id: template.id,
+                is_custom: false,
             });
         }
     };

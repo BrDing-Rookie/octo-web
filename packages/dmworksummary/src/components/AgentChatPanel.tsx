@@ -348,19 +348,24 @@ export default class AgentChatPanel extends Component<AgentChatPanelProps, Agent
             <div className={`agent-chat-process-panel${processExpanded ? '' : ' agent-chat-process-panel--collapsed'}`}>
                 <button
                     className="agent-chat-process-toggle"
-                    onClick={() => this.setState(prev => {
+                    onClick={() => {
                         // DAP-218 M11：展开「查看生成过程」时发(仅展开边,收起不计)。
                         // DAP-266：补 step_count（生成过程步数,progressSteps.length）。
                         // DAP-271 finding 6：补业务会话 session_id（agent chat 会话 id，this.props.sessionId）。
                         //   信封顶层的 session_id 是设备会话(envelope.session_id)，与 props.session_id 分属两条
                         //   路径、互不覆盖(sanitizer 保留 props.session_id)，故此业务会话必须透传，不再以「会被
                         //   信封覆盖」为由 DEFER。字段语义/命名如需权威口径调整见 DAP-271 D 节。
-                        if (!prev.processExpanded) Dap.shared.track("smart_summary_agent_process_viewed", {
-                            step_count: progressSteps.length,
-                            ...(this.props.sessionId ? { session_id: this.props.sessionId } : {}),
-                        });
-                        return { processExpanded: !prev.processExpanded };
-                    })}
+                        // DAP-247/S8：track 必须移出 setState 更新函数——更新函数须为纯函数,React（Strict Mode
+                        //   双调用 / 并发渲染重放）可能重复调用 → 重复上报。改为在 onClick 里先读当前 state 判展开边,
+                        //   仅「即将展开」(processExpanded===false)时发一次,再切换状态。语义不变。
+                        if (!this.state.processExpanded) {
+                            Dap.shared.track("smart_summary_agent_process_viewed", {
+                                step_count: progressSteps.length,
+                                ...(this.props.sessionId ? { session_id: this.props.sessionId } : {}),
+                            });
+                        }
+                        this.setState(prev => ({ processExpanded: !prev.processExpanded }));
+                    }}
                 >
                     {processExpanded ? '▼' : '▶'} {t('summary.common.agentChat.viewGenerationProcess')} ({progressSteps.length} {t('summary.common.agentChat.stepsCount')})
                 </button>
