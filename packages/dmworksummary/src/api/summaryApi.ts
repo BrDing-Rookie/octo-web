@@ -1516,6 +1516,7 @@ export async function updateMyTopicTemplate(
     // DAP-218 M11：编辑「预置模板」的个人覆盖成功(code===0)命令式发 smart_summary_preset_template_edited。
     // DAP-271 P1 隐私红线：**不上报用户自由输入的模板名称**(payload.label 可含客户/项目/私人内容)。
     //   改用非 PII 的模板标识/类型:template_id(不透明标识)+ is_custom=false(预置模板被个人覆盖)。
+    //   owner 已裁定不采 template_name(2026-09-17 于靖力：隐私红线 + 源 spec 指标表无埋点消费,场景分类走 DB),已收口非冲突。
     const data = await put<{ template: TopicTemplate }>(
         `/summary-templates/${encodeURIComponent(templateId)}/my`,
         payload,
@@ -1539,6 +1540,7 @@ export async function createCustomTopicTemplate(
     // DAP-271 P1 隐私红线：**不上报用户自由输入的模板名称**(payload.label)。改用非 PII 字段
     //   is_custom=true(本函数恒创建自定义模板)。新模板 id 由服务端生成,调用点(track 发起于请求前)
     //   拿不到 → 不带 template_id,只带 is_custom + 调用方 trackProps(如 template_count_after)。
+    //   owner 已裁定不采 template_name(2026-09-17 于靖力：隐私红线 + 源 spec 指标表无埋点消费,场景分类走 DB),已收口非冲突。
     const data = await post<{ template: TopicTemplate }>(
         '/summary-templates/my',
         payload,
@@ -1555,6 +1557,7 @@ export async function updateCustomTopicTemplate(
     // DAP-218 M11：编辑「自定义模板」成功(code===0)命令式发 smart_summary_custom_template_edited。
     // DAP-271 P1 隐私红线：**不上报用户自由输入的模板名称**(payload.label)。改用非 PII 的
     //   template_id(不透明标识)+ is_custom=true(自定义模板)。
+    //   owner 已裁定不采 template_name(2026-09-17 于靖力：隐私红线 + 源 spec 指标表无埋点消费,场景分类走 DB),已收口非冲突。
     const data = await put<{ template: TopicTemplate }>(
         `/summary-templates/my/${encodeURIComponent(templateId)}`,
         payload,
