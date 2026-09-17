@@ -477,23 +477,33 @@ export default function SummaryWorkbenchFeature({
     if (notifiedTaskIds.current.has(taskId)) return;
     notifiedTaskIds.current.add(taskId);
     markAgentSummaryNotificationEligible(taskId);
-    Dap.shared.track("smart_summary_started", {
-      object_id: channel?.channelID,
-      source,
-      entry_point: source,
-      entry_source: source,
-      trigger_mode: triggerMode,
-      // DAP-266：补 spec 维度 mode / channel_count / participant_count（就近取自 workbench.scope）。
-      // DAP-271 finding 2：spec 确认需 channel_ids → 按显式键把 chatId 逗号连接成字符串(primitive,过得了
-      //   sanitizer)，不泛化放行数组。finding 6：template_source 由 scope.template.isCustom 就近派生。
-      mode: triggerMode,
-      channel_count: workbench.scope.selectedChannels.length,
-      channel_ids: workbench.scope.selectedChannels.map((c) => c.chatId).join(","),
-      participant_count: workbench.scope.participants.length,
-      ...(workbench.scope.template
-        ? { template_source: workbench.scope.template.isCustom ? "custom" : "preset" }
-        : {}),
-    });
+    // DAP-247/S6（architect 裁定 · spec-props.md:333 P0）：smart_summary_started 只对应 normal
+    // 「快速总结」路径;agent 创建路径不发 started,发 smart_summary_agent_saved（spec:441，props =
+    // { message_count }）。agent 分支若沿用 started 会污染快速总结漏斗(错误 P0 数据)。
+    if (triggerMode === "agent") {
+      // message_count 就近取自 workbench 会话消息条数,对齐 AgentChatPanel 用 messages.length 的口径。
+      Dap.shared.track("smart_summary_agent_saved", {
+        message_count: workbench.viewState.messages.length,
+      });
+    } else {
+      Dap.shared.track("smart_summary_started", {
+        object_id: channel?.channelID,
+        source,
+        entry_point: source,
+        entry_source: source,
+        trigger_mode: triggerMode,
+        // DAP-266：补 spec 维度 mode / channel_count / participant_count（就近取自 workbench.scope）。
+        // DAP-271 finding 2：spec 确认需 channel_ids → 按显式键把 chatId 逗号连接成字符串(primitive,过得了
+        //   sanitizer)，不泛化放行数组。finding 6：template_source 由 scope.template.isCustom 就近派生。
+        mode: triggerMode,
+        channel_count: workbench.scope.selectedChannels.length,
+        channel_ids: workbench.scope.selectedChannels.map((c) => c.chatId).join(","),
+        participant_count: workbench.scope.participants.length,
+        ...(workbench.scope.template
+          ? { template_source: workbench.scope.template.isCustom ? "custom" : "preset" }
+          : {}),
+      });
+    }
     window.dispatchEvent(
       new CustomEvent("chat-summary-created", {
         detail: {

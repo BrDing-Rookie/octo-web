@@ -442,10 +442,12 @@ export async function createAgentSummary(
         // 后端返成功但 task_id 缺失/非法 —— 视为保存失败,不能清 chat
         throw new Error(resp.data?.message || 'create agent summary returned no task_id');
     }
-    // 二审 P1/P2-2:agent 模式也是一条「成功发起」。走到这里 envelope code 已判定成功
-    // (仅 code===0,缺/空/非零信封均已在上面抛出),与传统 createSummary 的 gate 同口径,
-    // 补发 smart_summary_started(此前 agent 模式一次都不发,与 normal 模式不一致)。
-    Dap.shared.track('smart_summary_started', trackProps);
+    // DAP-247/S6（architect 裁定 · spec-props.md:333 P0）：smart_summary_started 只对应
+    // normal「快速总结」创建路径;Agent 总结模式不产生本事件,agent 真正「生成一条总结记录」的
+    // 动作事件是 smart_summary_agent_saved。此端点(POST /summaries/agent)是 agent 专用路径,
+    // 故不再发 started —— 其成功事件 smart_summary_agent_saved 由「保存为总结」成功回调
+    // (AgentChatPanel.tsx onSaveAsSummary resolve truthy 时)发出,删此处 started 后本路径
+    // 变为「只发 agent_saved」,符合 spec。trackProps 仍随调用传入但此路径不再消费。
     return data;
 }
 

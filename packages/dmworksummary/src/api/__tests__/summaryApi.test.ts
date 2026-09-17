@@ -807,15 +807,17 @@ describe('summaryApi', () => {
             track.mockRestore();
         });
 
-        it('agent mode emits once after envelope success (P2-2)', async () => {
+        it('agent mode does NOT emit smart_summary_started even after envelope success (DAP-247/S6)', async () => {
+            // architect 裁定（spec-props.md:333 P0）：smart_summary_started 只对应 normal「快速总结」
+            // 路径;createAgentSummary 是 agent 专用端点,成功后不发 started（agent 的记录事件是
+            // smart_summary_agent_saved,由「保存为总结」成功回调发出）。此前固化 agent 发 started
+            // 属错误行为,反转钉死:envelope 成功也不发 started。
             const { Dap } = await import('@octo/base');
             const track = vi.spyOn(Dap.shared, 'track').mockImplementation(() => undefined);
             const { createAgentSummary } = await import('../summaryApi');
             mockPost.mockResolvedValueOnce({ data: { code: 0, data: { task_id: 3, task_no: 'n', status: 1, created_at: 'x' } } });
             await createAgentSummary({} as any, { trigger_mode: 'agent' });
-            const started = track.mock.calls.filter((c) => c[0] === 'smart_summary_started');
-            expect(started).toHaveLength(1);
-            expect(started[0][1]).toMatchObject({ trigger_mode: 'agent' });
+            expect(track.mock.calls.some((c) => c[0] === 'smart_summary_started')).toBe(false);
             track.mockRestore();
         });
 
