@@ -556,7 +556,7 @@ class DapImpl {
     }
 
     /**
-     * 基础量数组校验 + 截断(见 DAP-413 裁定 1/2)。
+     * 基础量数组校验 + 截断(见 DAP-413 裁定 1/2 / A-2)。
      * — 非数组 → undefined(由调用方丢弃)。
      * — 空数组 [] → undefined:显式与「缺失」等价地丢弃(裁定 5)。后端
      *   `JSON_TABLE ... jt.item_id IS NOT NULL AND <> ''` 本就过滤空集,且不能让空数组
@@ -565,12 +565,26 @@ class DapImpl {
      *   undefined / 混合类型 → 整个数组丢弃(返回 undefined),不做部分保留。
      * — 长度超 MAX_ARRAY_LEN → 截断到上限,不报错、不丢整批。
      *   string 元素不额外截断:与现有标量 string 处理口径一致(现有代码对标量 string 无截断)。
+     *
+     * **B-1 防御拷贝(必守的合规不变量)**:先 `Array.from(v)` 做一份快照再 slice,**绝不**把
+     * 调用方的原数组按引用存进 props。序列化发生在之后的 flush(5s 定时 / 队列满 20 / unload /
+     * 重试),若存引用,则 `track()` 与 flush 之间调用方对该数组的任何 mutation(push 对象 /
+     * 文件名)都会未经 sanitize 直接进 POST body——这会击穿「不夹带正文」的硬约束(评审 B-1 实测
+     * 可复现)。快照切断别名后,被发出的数组与被校验的数组恒为同一份。
+     * `Array.from` 顺带把稀疏洞(`[1,,3]`)致密成 `undefined` → 过不了 `typeof` 校验 → 整组丢弃,
+     * 一并解决 B-3(否则 `every` 跳过空洞、`JSON.stringify` 把洞填成 null,破坏真数组语义)。
+     *
+     * **顺序不变量(A-2 架构裁定,勿改)**:先截断、再校验**保留下来的那一段**——不改成
+     * 「尾部有脏元素就整体丢弃」。截断本身即是部分保留,再要求 drop-whole 与截断语义自相矛盾。
+     * 真正要守的不变量是「**凡被发出的元素都经过校验**」:先 slice 到 200、再对这 200 个 every 校验,
+     * 满足该不变量(200 个合法 string 之后第 201 个是对象 → 前 200 个已被截掉对象、照常放行)。
      */
     private sanitizeArray(v: unknown): TrackArray | undefined {
         if (!Array.isArray(v)) return undefined
         if (v.length === 0) return undefined // 空数组 ≡ 缺失,丢弃(不让它变 null / [] 混进 props)
-        const sliced = v.length > MAX_ARRAY_LEN ? v.slice(0, MAX_ARRAY_LEN) : v
-        // 均为 string?
+        // B-1:先快照(切断调用方别名)+ 致密稀疏洞;再截断。顺序不变量见上方注释(A-2)。
+        const sliced = Array.from(v).slice(0, MAX_ARRAY_LEN)
+        // 校验保留下来的这一段:均为 string?
         if (sliced.every((e) => typeof e === 'string')) return sliced as string[]
         // 均为 number(排除 NaN / Infinity:JSON.stringify 会把它们序列化成 null,破坏真数组语义)?
         if (sliced.every((e) => typeof e === 'number' && Number.isFinite(e))) return sliced as number[]
