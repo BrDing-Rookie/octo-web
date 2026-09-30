@@ -306,7 +306,54 @@ describe('Dap.sanitizeProps 数组 sanitize 边界回修(DAP-413 review)', () =>
         expect('item_ids' in props!).toBe(false)
     })
 
-    it('A-2: 顺序不变量 —— 200 合法元素 + 尾部脏元素 → 截断到 200 保留(先截断再校验保留部分)', () => {
+    it('B-5: cap 外的 throwing getter 不会被读取,保留段仍正常发送', () => {
+        const ids: unknown[] = Array.from({ length: 200 }, (_, i) => i)
+        Object.defineProperty(ids, 200, {
+            enumerable: true,
+            get() {
+                throw new Error('getter past cap must not run')
+            },
+        })
+        ids.length = 201
+        const events = captureWithMutation(
+            () => shared.track('drive_file_batch_downloaded', { item_ids: ids as number[] }),
+            () => {},
+        )
+        const props = propsOf(events, 'drive_file_batch_downloaded')
+        expect(props).toBeDefined()
+        expect(props!.item_ids).toEqual(Array.from({ length: 200 }, (_, i) => i))
+    })
+
+    it('B-5: 非空数组的自定义空 iterator 不会把快照变成空数组', () => {
+        const ids = [1, 2, 3] as unknown as number[]
+        Object.defineProperty(ids, Symbol.iterator, {
+            configurable: true,
+            value: function* emptyIterator() {
+                // 旧实现的 Array.from(v) 会错误地消费这个空 iterator。
+            },
+        })
+        const events = captureWithMutation(
+            () => shared.track('drive_file_batch_downloaded', { item_ids: ids }),
+            () => {},
+        )
+        const props = propsOf(events, 'drive_file_batch_downloaded')
+        expect(props).toBeDefined()
+        expect(props!.item_ids).toEqual([1, 2, 3])
+    })
+
+    it('B-5: cap 外的稀疏洞不影响保留段', () => {
+        const ids = Array.from({ length: 201 }, (_, i) => i) as number[]
+        delete ids[200]
+        const events = captureWithMutation(
+            () => shared.track('drive_file_batch_downloaded', { item_ids: ids }),
+            () => {},
+        )
+        const props = propsOf(events, 'drive_file_batch_downloaded')
+        expect(props).toBeDefined()
+        expect(props!.item_ids).toEqual(Array.from({ length: 200 }, (_, i) => i))
+    })
+
+    it('A-2: 合法前缀 + 截断范围外的脏元素 → 保留前 200', () => {
         // 250 个合法 string + 第 251 个是对象。裁定:保留前 200(已截掉对象),不整体丢弃。
         const arr: unknown[] = Array.from({ length: 250 }, (_, i) => 's' + i)
         arr.push({ secret: 'tail' })
@@ -324,17 +371,21 @@ describe('Dap.sanitizeProps 数组 sanitize 边界回修(DAP-413 review)', () =>
         expect(JSON.stringify(props!.item_ids)).not.toContain('secret')
     })
 
-    it('A-2: 前 200 合法但第 200 个索引处即为脏元素时,整个 key 丢弃(校验的是保留段)', () => {
-        // 200 个合法 number 之后紧跟对象:保留段是前 200 个 number(合法)→ 放行。
-        // 而若脏元素落在前 200 内(如首位就是对象),保留段含脏 → 整组丢。
-        const arr: unknown[] = [{ bad: 1 }, ...Array.from({ length: 199 }, (_, i) => i)]
+    it('A-2: 保留段内的脏元素 → 整个 key 丢弃(先截断再校验保留段)', () => {
+        // 前 199 个合法 number + 第 200 个为对象:对象位于保留段内,所以整组丢弃。
+        // 后面的合法元素位于截断范围外,不参与本次校验。
+        const arr: unknown[] = [
+            ...Array.from({ length: 199 }, (_, i) => i),
+            { bad: 1 },
+            ...Array.from({ length: 10 }, (_, i) => i + 199),
+        ]
         const events = captureWithMutation(
-            () => shared.track('drive_file_batch_moved', { item_ids: arr as number[], count: 200 }),
+            () => shared.track('drive_file_batch_moved', { item_ids: arr as number[], count: arr.length }),
             () => {},
         )
         const props = propsOf(events, 'drive_file_batch_moved')
         expect(props).toBeDefined()
-        expect('item_ids' in props!).toBe(false) // 保留段(前 200)含对象 → 整组丢
-        expect(props!.count).toBe(200)
+        expect('item_ids' in props!).toBe(false) // 保留段含对象 → 整组丢
+        expect(props!.count).toBe(210)
     })
 })

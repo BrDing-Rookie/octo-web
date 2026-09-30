@@ -44,9 +44,11 @@ validated**; (4) empty `[]` is dropped (treated as missing, never becomes `null`
 (5) `object_id` extraction still accepts only string/number, never an array. This widening
 exists so batch events can emit an id list as a **real JSON array** in `object_json`
 (downstream octo-dap reads `JSON_TABLE(object_json, '$.item_ids[*]')`, which needs a true
-array, not a comma string). The no-content / no-filename hard constraint is unchanged:
-arrays carry only diagnostic id lists, never body text, and the drop-whole + blacklist +
-copy rules keep that structural.
+array, not a comma string). The no-content / no-filename constraint is **not structurally enforced for array element content**: the sanitizer
+checks element types, while `PROP_KEY_BLACKLIST` matches key names only. Arrays are intended for opaque diagnostic
+id lists, but emit sites remain solely responsible for passing ids rather than body text, exactly as for scalar
+string props (DAP-271 finding 1). Structurally enforced guarantees here are that object bodies cannot be nested,
+the retained element count is capped, and post-`track()` mutation cannot alter the serialized snapshot.
 
 **`channel_id` 归一约定 (#1452 R10 P2-2)**: 本 PR 新增/收口的所有命令式事件统一发 **bare
 channel_id** —— 即经 `stripSpacePrefix()` 去掉 Space 部署下的 `s<32hex>_` 前缀,取裸 group_no /
