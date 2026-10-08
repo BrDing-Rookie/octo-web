@@ -458,16 +458,18 @@ describe('FETCH_RULES — doc path 通道(T1 同窗内嵌,/api/v1/docs/*)', () =
         expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/recent')).toBeUndefined()
     })
 
-    it('创建 / 打开 / 评论 / 导出 / 删除;转发不再挂 grant 端点(移到 WKBase 发送成功命令式)', () => {
-        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs')).toBe('document_created')
-        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/view')).toBe('document_opened')
-        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/comments')).toBe('document_commented')
+    it('创建 / 打开 / 评论 / 导出 / 删除均移出 fetch 通道(docs module 命令式携全属性);转发不再挂 grant 端点', () => {
+        // dap350 follow-up:这五个事件原按端点 2xx 近似、props 为空且无 doc_type/create_method/format,
+        //   现由 octo-docs-module 命令侧携全属性发射,故不得再回 FETCH_RULES(避免空属性双计)。
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/view')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/comments')).toBeUndefined()
         // Octo-Q head 258e876e P1:document_forwarded 从授权 batch 端点移到 WKBase.runDocForward 发送成功
         //   命令式(默认转发路径开关关不打 batch → 原漏计)。两个 forward-grant 端点均不再映射。
         expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/forward-grant/batch')).toBeUndefined()
         expect(matchFetchEvent(idx, 'POST', '/api/v1/docs/d1/forward-grant')).toBeUndefined()
-        expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/d1/export/file')).toBe('document_exported')
-        expect(matchFetchEvent(idx, 'DELETE', '/api/v1/docs/d1')).toBe('document_deleted')
+        expect(matchFetchEvent(idx, 'GET', '/api/v1/docs/d1/export/file')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'DELETE', '/api/v1/docs/d1')).toBeUndefined()
     })
 
     it('成员管理写端点不走通用 FetchRules，避免与 MemberPanel 命令式属性事件双计', () => {
