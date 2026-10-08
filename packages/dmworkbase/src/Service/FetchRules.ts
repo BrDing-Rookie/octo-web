@@ -251,9 +251,12 @@ export const FETCH_RULES: FetchRule[] = [
     // succeeds, with doc identity/action/permission props. Do not map these endpoints here or the
     // same PUT/DELETE would be counted twice with empty props.
     // dap350 follow-up: document_exported / document_deleted 同样移出本通道。
-    //   原按 GET /docs/:id/export/file、DELETE /docs/:id 的 2xx 采集,props 为空且无 doc_type / format;
-    //   删除还会在 404-already-gone 时漏计。改由命令侧发射 document_exported {doc_id,doc_type,format} 与
-    //   document_deleted {doc_id,doc_type}(含 200 与 404-gone 两条成功路径),永不得再回 FETCH_RULES。
+    //   原按 GET /docs/:id/export/file、DELETE /docs/:id 的 2xx 采集,props 为空且无 doc_type / format。
+    //   改由命令侧发射 document_exported {doc_id,doc_type,format} 与 document_deleted {doc_id,doc_type}。
+    //   删除语义(octo-docs-module useDocDelete):只在 200(真正执行删除的那次)发一次;404-already-gone
+    //   视为「别的 client / 丢响应重试 已删并已计过」,仅导航不再发,保证重复/并发删除至多计一次(幂等)。
+    //   因此总体上机器回滚删除(importBoardScene 回滚等走 deleteDoc 的非用户手势)不再被计 —— 对分析是改进。
+    //   永不得再回 FETCH_RULES。
     // apps_module_entered 不在此通道(十二审 🔴 P1-3)—— GET /app_bot/available 由 useAppBots 在**每次切换空间**
     //   时经 mittBus "space-changed" 监听重拉(loadData),而 Apps 页首次访问后就常驻 DOM(MainContentLeft 只切
     //   display 不卸载),所以用户打开过一次 Apps 后,在 Chat/Contacts 任意处切空间都会误发 apps_module_entered;

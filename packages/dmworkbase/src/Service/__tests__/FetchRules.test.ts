@@ -203,6 +203,14 @@ describe('FETCH_RULES — 「请求成功 ≠ 用户动作」的语义边界(负
             //   原挂 GET /docs/recent/creators(被 122 ?creator= 筛选共用会无界放大)。改由 host 导航手势
             //   命令式发射(apps/web Main/index.tsx + tab_low_screen.tsx,menus.id==='docs' 非 reentry),永不得回 fetch。
             'document_module_entered',
+            // ↓ dap350 follow-up:五个 docs 生命周期事件从 fetch 通道移出,改由 octo-docs-module 命令侧携全属性
+            //   发射(create_method/doc_type/format)。per-endpoint 负例(doc path 通道那组)只钉死原始 method+path;
+            //   把事件名也纳入整表扫描,挡住「换个路径重新挂同名事件」(review A-2)。
+            'document_created',
+            'document_opened',
+            'document_commented',
+            'document_exported',
+            'document_deleted',
         ])
         const leaked = FETCH_RULES.filter((r) => uiOnly.has(r.event)).map((r) => `${r.method} ${r.path} → ${r.event}`)
         expect(leaked, leaked.join('\n')).toEqual([])
