@@ -1,0 +1,961 @@
+// Behavioural probes for the three blocking findings on PR #1783 head.
+// Drives the real build output against a stub server implementing the
+// server contracts: one-time session resolve, auth-gated presign GET,
+// auth-gated upload POST, POST /v1/reports.
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { chromium } = require('playwright');
+
+// Defaults to the plain `vite build` output; overridable so CI can point at
+// whatever build directory that job produced.
+const BUILD = path.resolve(process.env.REPORT_H5_BUILD || path.join(__dirname, '../../build'));
+if (!fs.existsSync(path.join(BUILD, 'report.html'))) {
+  console.error(`report.html not found under ${BUILD} — run the web build first`);
+  process.exit(2);
+}
+// Prefer a caller-supplied browser (CI uses the Playwright-managed chromium via
+// PLAYWRIGHT_BROWSERS_PATH=0); fall back to a locally installed Chrome so the
+// script also runs on a dev box without the bundled browser.
+const submissions = [];
+const uploads = [];
+const resolveRequests = [];
+const presignRequests = [];
+const submitAuth = [];
+let sessionConsumed = false;
+let uploadDelayMs = 0;
+// Presign GET (#P2-1): delay its answer, or ignore the request entirely to
+// model a proxy that accepts the connection but never responds.
+let presignDelayMs = 0;
+let presignHang = false;
+// When set, the presign GET returns this url verbatim instead of the default.
+// Used to assert the upload POST cannot be redirected off-origin by a
+// scheme-relative pathname (round-7 P0).
+let presignUrlOverride = null;
+// When set, POST /v1/reports answers 502 — the "result unknown" outcome.
+let failSubmit = false;
+// When set, the upload POST answers 500 so a tile reaches 'failed' fast (used to
+// exercise "delete the failed tile, then re-pick the same file").
+let failUpload = false;
+// Requests the off-origin "leak" listener received. Must stay empty.
+const leakRequests = [];
+let serveCsp = true;
+// Delay static /i18n/*.json responses so a probe can exercise the race where the
+// reporter types before the i18n payload lands (the jQuery.i18n plugin rewrites
+// value/html/placeholder in its getJSON callback, i.e. after a network round-trip).
+let i18nDelayMs = 0;
+
+// The real production policy, read from the shipped template, so probes run under
+// the same CSP the pages actually get (previously the stub sent only
+// Content-Type, so the CSP-blocked bridge-iframe path was never exercised).
+function productionCsp() {
+  try {
+    const tpl = fs.readFileSync(path.resolve(__dirname, '../../../../nginx.conf.template'), 'utf8');
+    const m = tpl.match(/add_header\s+Content-Security-Policy\s+"([^"]*)"/);
+    if (!m) return null;
+    // Resolve the envsubst placeholder to an empty extra source.
+    return m[1].replace(/\$\{[A-Z_]+\}/g, '').replace(/\s{2,}/g, ' ').trim();
+  } catch (e) {
+    return null;
+  }
+}
+
+function serve(port) {
+  return new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+      const u = new URL(req.url, `http://127.0.0.1:${port}`);
+      const json = (o, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+
+      if (u.pathname === '/v1/report/session/resolve') {
+        resolveRequests.push({ method: req.method, body: '' });
+        if (sessionConsumed) return json({ status: 400, msg: 'invalid' }, 400);
+        sessionConsumed = true;
+        return json({ uid: 'u-1', token: 'tok-abc' });
+      }
+      if (u.pathname === '/v1/report/categories') {
+        // Nested 3-level tree so the parent-category navigation path is exercised:
+        // A(1) > B(12) > C(121), plus a flat sibling D(2).
+        return json([
+          { category_no: '1', category_name: 'Cat A', parent_category_no: '',
+            children: [ { category_no: '12', category_name: 'Cat B', parent_category_no: '1',
+                          children: [ { category_no: '121', category_name: 'Cat C', parent_category_no: '12', children: [] } ] } ] },
+          { category_no: '2', category_name: 'Cat D', parent_category_no: '', children: [] },
+        ]);
+      }
+      if (u.pathname === '/v1/file/upload' && req.method === 'GET') {
+        presignRequests.push({ type: u.searchParams.get('type') || '', path: u.searchParams.get('path') || '', filename: u.searchParams.get('filename') || '' });
+        if (!req.headers.token) return json({ status: 401, msg: 'token required' }, 401);
+        if (presignHang) return; // hold the connection open, never answer
+        // Echo the caller's own path back (the server's getFilePath handler
+        // builds the POST url from the request's `path`), so the probe exercises
+        // a response derived from the real request rather than a hard-coded one.
+        const url = presignUrlOverride || `http://127.0.0.1:${port}/v1/file/upload?type=report&path=${encodeURIComponent(u.searchParams.get('path') || '/u-1/x.png')}`;
+        return setTimeout(() => json({ url }), presignDelayMs);
+      }
+      if (u.pathname === '/v1/file/upload' && req.method === 'POST') {
+        uploads.push({ token: req.headers.token, at: Date.now() });
+        if (!req.headers.token) return json({ status: 401 }, 401);
+        if (failUpload) return json({ status: 500 }, 500);
+        setTimeout(() => json({ path: 'report/u-1/LEAKED.png' }), uploadDelayMs);
+        return;
+      }
+      if (u.pathname === '/v1/reports') {
+        let body = ''; req.on('data', (c) => (body += c));
+        req.on('end', () => {
+          submitAuth.push({ token: req.headers.token || null });
+          submissions.push(JSON.parse(body));
+          if (failSubmit) return json({ msg: 'upstream boom' }, 502);
+          json({ status: 200 });
+        });
+        return;
+      }
+      let p = u.pathname === '/' ? '/index.html' : u.pathname;
+      const f = path.join(BUILD, p);
+      if (fs.existsSync(f) && fs.statSync(f).isFile()) {
+        const ct = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' }[path.extname(f)] || 'application/octet-stream';
+        const headers = { 'Content-Type': ct };
+        const csp = serveCsp ? productionCsp() : null;
+        if (csp) headers['Content-Security-Policy'] = csp;
+        // The i18n payload is fetched once, asynchronously, on document.ready.
+        // Delaying it lets a probe type before it lands, which is exactly the
+        // window where an unmarked textarea had its value overwritten.
+        if (u.pathname.startsWith('/i18n/') && i18nDelayMs > 0) {
+          return setTimeout(() => { res.writeHead(200, headers); res.end(fs.readFileSync(f)); }, i18nDelayMs);
+        }
+        res.writeHead(200, headers); res.end(fs.readFileSync(f));
+      } else { res.writeHead(404); res.end('nf'); }
+    });
+    s.listen(port, () => resolve(s));
+  });
+}
+
+// A second listener that stands in for the "foreign host" a scheme-relative
+// upload url would resolve to. Any request it receives is a credential/evidence
+// leak and must make the probe fail.
+function serveLeak(port, sink) {
+  return new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+      sink.push({ method: req.method, url: req.url, token: req.headers.token || null });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ path: 'leak/LEAKED.png' }));
+    });
+    s.listen(port, () => resolve(s));
+  });
+}
+
+async function openForm(page, url) {
+  await page.goto(url);
+  await page.waitForFunction(() => window.categories && window.categories.length > 0, { timeout: 5000 });
+  // #2 is a leaf (Cat D): the form only renders for a leaf category.
+  await page.evaluate(() => { window.location.hash = '#2'; });
+  await page.waitForSelector('.reportContent', { state: 'visible', timeout: 5000 });
+}
+
+async function launchBrowser() {
+  // Prefer the Playwright-managed browser (CI runs with
+  // PLAYWRIGHT_BROWSERS_PATH=0); if it is not installed, fall back to a
+  // system Chrome so the script still runs on a plain dev box.
+  try {
+    return await chromium.launch({});
+  } catch (e) {
+    const candidates = [
+      process.env.REPORT_H5_CHROME,
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/usr/bin/google-chrome',
+      '/usr/bin/chromium',
+    ].filter(Boolean);
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return chromium.launch({ executablePath: p });
+    }
+    throw e;
+  }
+}
+
+(async () => {
+  const results = [];
+  const check = (name, cond, detail) => { results.push({ name, pass: !!cond, detail }); console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); };
+
+  const server = await serve(18933);
+  const leakServer = await serveLeak(18934, leakRequests);
+  const browser = await launchBrowser();
+  // Real touch events, so the tap-vs-drag discrimination in renderCategories is
+  // actually exercised (a synthetic Event('touchend') carries no coordinates and
+  // would be ignored by the guard, silently making the category unusable).
+  const tapCategory = (p, label) => p.evaluate((name) => {
+    const lis = Array.from(document.querySelectorAll('.categoryBox .item ul li'));
+    const el = lis.find((li) => li.querySelector('label') && li.querySelector('label').textContent === name);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const mk = (type, cx, cy) => new TouchEvent(type, {
+      bubbles: true, cancelable: true, composed: true,
+      touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: el, clientX: cx, clientY: cy })],
+      changedTouches: [new Touch({ identifier: 1, target: el, clientX: cx, clientY: cy })],
+      targetTouches: [],
+    });
+    el.dispatchEvent(mk('touchstart', x, y));
+    el.dispatchEvent(mk('touchend', x, y));
+    return true;
+  }, label);
+
+  // A drag that starts and ends on a row (as a scroll gesture does) must NOT select it.
+  const dragCategory = (p, label, dx, dy) => p.evaluate(({ name, dx, dy }) => {
+    const lis = Array.from(document.querySelectorAll('.categoryBox .item ul li'));
+    const el = lis.find((li) => li.querySelector('label') && li.querySelector('label').textContent === name);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const mk = (type, cx, cy, list) => new TouchEvent(type, {
+      bubbles: true, cancelable: true, composed: true,
+      touches: list, changedTouches: list, targetTouches: list,
+    });
+    const t1 = [new Touch({ identifier: 1, target: el, clientX: x, clientY: y })];
+    const t2 = [new Touch({ identifier: 1, target: el, clientX: x + dx, clientY: y + dy })];
+    el.dispatchEvent(mk('touchstart', x, y, t1));
+    el.dispatchEvent(mk('touchmove', x + dx, y + dy, t2));
+    el.dispatchEvent(mk('touchend', x + dx, y + dy, []));
+    return true;
+  }, { name: label, dx, dy });
+  const page = await browser.newPage();
+  await page.addInitScript(() => {
+    window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 120) };
+  });
+
+  // ---------- Probe 1: double-tap files exactly one complaint ----------
+  submissions.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  await openForm(page, 'http://127.0.0.1:18933/report.html?session=S1&channel_id=ch-q&channel_type=2');
+  await page.fill('.reportContent', 'single complaint');
+  await page.evaluate(() => { const b = document.querySelector('.reportSubmit'); b.click(); b.click(); b.click(); });
+  await page.waitForTimeout(1500);
+  check('P1-A: three rapid taps → exactly one POST /v1/reports', submissions.length === 1, `got ${submissions.length}`);
+
+  // ---------- Probe 2: withdrawn in-flight upload is not attached ----------
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 900;
+  await openForm(page, 'http://127.0.0.1:18933/report.html?session=S2&channel_id=ch-q&channel_type=2');
+  // attach an image; its upload settles only after the category switch below
+  await page.evaluate(() => {
+    const dt = new DataTransfer(); dt.items.add(new File(['x'], 'evidence.png', { type: 'image/png' }));
+    const inp = document.querySelector('.imgItem .upload');
+    Object.defineProperty(inp, 'files', { value: dt.files });
+    inp.dispatchEvent(new Event('change'));
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.imgs .imgItem').length >= 1, { timeout: 3000 });
+  // switch category while the upload is still in flight → clearDetailContent
+  await page.evaluate(() => { window.location.hash = ''; });
+  await page.waitForTimeout(150);
+  // #2 (Cat D) is a leaf, so the form renders there for the next draft.
+  await page.evaluate(() => { window.location.hash = '#2'; });
+  await page.waitForSelector('.reportContent', { state: 'visible', timeout: 5000 });
+  await page.fill('.reportContent', 'new draft - I attached NO photo');
+  await page.waitForTimeout(1200); // stale upload lands in this window
+  await page.evaluate(() => document.querySelector('.reportSubmit').click());
+  await page.waitForTimeout(900);
+  const imgs = submissions.length ? submissions[submissions.length - 1].imgs : null;
+  check('P1-B: withdrawn in-flight upload is not attached to the next complaint',
+    submissions.length === 1 && Array.isArray(imgs) && imgs.length === 0,
+    `imgs=${JSON.stringify(imgs)} posts=${submissions.length}`);
+  check('P1-B: upload POST carried the token header',
+    uploads.length > 0 && uploads.every((u) => u.token === 'tok-abc'),
+    `uploads=${uploads.length} tokens=${JSON.stringify(uploads.map((u) => u.token))}`);
+
+  // ---------- Probe 2b: withdrawing during presign never starts the upload ----------
+  // Isolates the cancel/abort protection from the targetPaths snapshot. Hold the
+  // presign GET open, then withdraw the draft before it answers: the withdrawal
+  // must mark the tile 'cancelled' so uploadImage()'s `status !== 'pending'`
+  // guard skips xhr.send(). If only clearDetailContent()'s cancel is reverted
+  // (snapshot kept), the tile stays 'pending' and the upload POST fires — this
+  // assertion is the one that goes red for that single mutation.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 800; presignHang = false;
+  await openForm(page, 'http://127.0.0.1:18933/report.html?session=S2b&channel_id=ch-q&channel_type=2');
+  await page.evaluate(() => {
+    const dt = new DataTransfer(); dt.items.add(new File(['y'], 'withdrawn.png', { type: 'image/png' }));
+    const inp = document.querySelector('.imgItem .upload');
+    Object.defineProperty(inp, 'files', { value: dt.files });
+    inp.dispatchEvent(new Event('change'));
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.imgs .imgItem').length >= 1, { timeout: 3000 });
+  await page.waitForTimeout(150); // presign still in flight
+  await page.evaluate(() => { window.location.hash = ''; }); // withdraw → clearDetailContent
+  await page.waitForTimeout(1500); // past presignDelayMs; upload POST would have landed by now
+  check('P1-B-abort: withdrawing during presign never starts the upload POST',
+    uploads.length === 0, `uploads=${uploads.length}`);
+  presignDelayMs = 0;
+
+  // ---------- Probe 4: submitting freezes the draft (no bypass during bridge wait) ----------
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 900;
+  await openForm(page, 'http://127.0.0.1:18933/report.html?session=S3&channel_id=ch-q&channel_type=2');
+  // bridge already resolves at 120ms; submit, then try to attach + switch category
+  // during that window. The draft must be frozen and the payload must reflect the
+  // state validated at submit time.
+  await page.fill('.reportContent', 'frozen draft');
+  await page.evaluate(() => document.querySelector('.reportSubmit').click());
+  // immediately try to add an image (the picker should be pointer-events:none)
+  await page.evaluate(() => {
+    const inp = document.querySelector('.imgItem .upload');
+    if (inp) {
+      const dt = new DataTransfer(); dt.items.add(new File(['x'], 'late.png', { type: 'image/png' }));
+      Object.defineProperty(inp, 'files', { value: dt.files });
+      inp.dispatchEvent(new Event('change'));
+    }
+  });
+  await page.waitForTimeout(1200);
+  const frozenImgs = submissions.length ? submissions[submissions.length - 1].imgs : null;
+  // Safe outcomes: either the re-validation refused (no POST), or a POST went out
+  // with a payload that does not omit evidence that was uploading. The unsafe case
+  // (the one this guards) is a POST with empty imgs while an upload was in flight.
+  const filedWithoutEvidence = submissions.some((s) => Array.isArray(s.imgs) && s.imgs.length === 0) && uploads.length > 0;
+  check('P1-C: an image started during the submit window cannot be silently omitted',
+    !filedWithoutEvidence,
+    `posts=${submissions.length} uploads=${uploads.length} imgs=${JSON.stringify(frozenImgs)}`);
+
+  // ---------- Probe 5: three-level category navigation includes the tapped node ----------
+  submissions.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  await openForm(page, 'http://127.0.0.1:18933/report.html?session=S4&channel_id=ch-q&channel_type=2');
+  // open A (has children) → should land on its children list with hash #1
+  await page.evaluate(() => { window.location.hash = '#1'; });
+  await page.waitForTimeout(400);
+  // tap B (has children) → hash must become #1-12 (NOT #1)
+  await tapCategory(page, 'Cat B');
+  await page.waitForTimeout(400);
+  const hashAfterB = await page.evaluate(() => window.location.hash);
+  check('P1-D: tapping a nested parent keeps the tapped node in the path',
+    hashAfterB === '#1-12', `hash=${hashAfterB} (expected #1-12)`);
+  // now tap C (leaf) → #1-12-121, root-first
+  await tapCategory(page, 'Cat C');
+  await page.waitForTimeout(400);
+  const hashAfterC = await page.evaluate(() => window.location.hash);
+  check('P1-D: leaf path is root-first and complete', hashAfterC === '#1-12-121', `hash=${hashAfterC} (expected #1-12-121)`);
+
+  // ---------- Probe 5b: a scroll drag across a row must not select it ----------
+  // The list scrolls; a swipe that starts and ends over a row still fires
+  // touchend on that row. Before the tap-vs-drag guard this navigated into the
+  // category the reporter only scrolled past.
+  submissions.length = 0; sessionConsumed = false;
+  await openForm(page, 'http://127.0.0.1:18933/report.html?session=S5b&channel_id=ch-q&channel_type=2');
+  // Back to the ROOT category list, where the root rows (Cat A / Cat D) are
+  // actually rendered. (openForm leaves the leaf form, where no list exists and
+  // the drag helper would silently no-op — which is how this probe passed while
+  // the guard was reverted.)
+  await page.evaluate(() => { window.location.hash = ''; });
+  await page.waitForTimeout(400);
+  const listVisible = await page.evaluate(() => !!document.querySelector('.categoryBox .item ul li'));
+  const hashBeforeDrag = await page.evaluate(() => window.location.hash);
+  const dragged = await dragCategory(page, 'Cat D', 0, -60); // vertical swipe over the row
+  await page.waitForTimeout(400);
+  const hashAfterDrag = await page.evaluate(() => window.location.hash);
+  check('P1-F: a vertical drag across a row does not select it',
+    listVisible && dragged && hashAfterDrag === hashBeforeDrag,
+    `listVisible=${listVisible} dragged=${dragged} before=${hashBeforeDrag} after=${hashAfterDrag}`);
+  // and a clean tap on the same row still works
+  await tapCategory(page, 'Cat D');
+  await page.waitForTimeout(400);
+  const hashAfterTap = await page.evaluate(() => window.location.hash);
+  check('P1-F: a clean tap on the same row still selects it',
+    hashAfterTap === '#2', `hash=${hashAfterTap} (expected #2)`);
+
+  // ---------- Probe 6: presign GET that never answers → removable failure tile ----------
+  // Models a proxy that accepts the presign GET but never responds. Before the
+  // timeout fix the tile stays 'pending' forever (submit answers "图片还在上传中"
+  // with no visible exit); after it, the tile becomes removable and submit is
+  // reachable again.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = true;
+  const presignDialogs = [];
+  page.on('dialog', (d) => { presignDialogs.push(d.message()); d.dismiss(); });
+  await openForm(page, 'http://127.0.0.1:18933/report.html?session=S5&channel_id=ch-q&channel_type=2');
+  await page.evaluate(() => {
+    const dt = new DataTransfer(); dt.items.add(new File(['z'], 'stuck.png', { type: 'image/png' }));
+    const inp = document.querySelector('.imgItem .upload');
+    Object.defineProperty(inp, 'files', { value: dt.files });
+    inp.dispatchEvent(new Event('change'));
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.imgs .imgItem').length >= 1, { timeout: 3000 });
+  // while stuck, submit is refused and no complaint goes out (the pre-fix state)
+  await page.evaluate(() => document.querySelector('.reportSubmit').click());
+  await page.waitForTimeout(300);
+  check('P2-1(pre): a hung presign blocks submit with no POST',
+    submissions.length === 0 && presignDialogs.some((m) => /还在上传中/.test(m)),
+    `posts=${submissions.length} dialogs=${JSON.stringify(presignDialogs)}`);
+  // past the 10s presign timeout the tile must become a removable failure
+  await page.waitForTimeout(11000);
+  const failedTileVisible = await page.evaluate(() => !!document.querySelector('.imgs .imgItem.upload-failed .uploadRemove'));
+  check('P2-1: timed-out presign renders a removable failure tile', failedTileVisible, `failedTile=${failedTileVisible}`);
+  // remove the failed tile → submit is unblocked and posts
+  await page.evaluate(() => {
+    const el = document.querySelector('.uploadRemove');
+    if (el) el.click();
+  });
+  await page.waitForTimeout(100);
+  await page.fill('.reportContent', 'after removing the stuck tile');
+  await page.evaluate(() => document.querySelector('.reportSubmit').click());
+  await page.waitForTimeout(900);
+  check('P2-1: after removing the timed-out tile, submit posts the complaint',
+    submissions.length === 1, `posts=${submissions.length}`);
+  presignHang = false;
+
+  // ---------- Probe 7: bridge present but silent → submit lock is released ----------
+  // The review repro: window.IMJSBridge exists but never invokes its callback.
+  // Before the fix the await hangs with pointer-events:none and no prompt; after
+  // it, the 5s timeout fires, alerts, and unlocks the button.
+  const silentDialogs = [];
+  const silentPage = await browser.newPage();
+  await silentPage.addInitScript(() => {
+    window.IMJSBridge = { callHandler: () => {} };
+  });
+  silentPage.on('dialog', (d) => { silentDialogs.push(d.message()); d.dismiss(); });
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false;
+  await openForm(silentPage, 'http://127.0.0.1:18933/report.html?session=S6&channel_id=ch-q&channel_type=2');
+  await silentPage.fill('.reportContent', 'silent bridge');
+  await silentPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await silentPage.waitForTimeout(3000); // below the 5s timeout: still locked (the pre-fix state)
+  check('P2-2(pre): within the bridge timeout the submit is still locked',
+    submissions.length === 0 &&
+    (await silentPage.evaluate(() => getComputedStyle(document.querySelector('.reportSubmit')).pointerEvents)) === 'none',
+    `posts=${submissions.length}`);
+  await silentPage.waitForTimeout(3000); // past the 5s bridge timeout
+  const unlocked = await silentPage.evaluate(() => getComputedStyle(document.querySelector('.reportSubmit')).pointerEvents);
+  check('P2-2: a silent bridge releases the lock and shows a visible prompt',
+    silentDialogs.some((m) => /超时/.test(m)) && unlocked !== 'none' && submissions.length === 0,
+    `dialogs=${JSON.stringify(silentDialogs)} pointerEvents=${unlocked} posts=${submissions.length}`);
+  await silentPage.close();
+
+  // Walk the nested tree with real taps from root to the C leaf (#1-12-121).
+  async function walkToLeafC(p) {
+    await p.evaluate(() => { window.location.hash = ''; });
+    await p.waitForTimeout(250);
+    for (const label of ['Cat A', 'Cat B', 'Cat C']) {
+      await tapCategory(p, label);
+      await p.waitForTimeout(300);
+    }
+    await p.waitForSelector('.reportContent', { state: 'visible', timeout: 5000 });
+  }
+
+  // ---------- Probe 8: a real hash navigation during the bridge wait ----------
+  // The review repro: nested leaf, submit with a slow bridge, then a back
+  // gesture changes the hash. Before the fix the post-await re-read filed the
+  // complaint against the navigated-to state. Now the payload is the render
+  // identity, AND the URL is re-synced so hash and form cannot diverge.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false;
+  const navPage = await browser.newPage();
+  await navPage.addInitScript(() => {
+    window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 2500) };
+  });
+  navPage.on('dialog', (d) => d.dismiss());
+  await openForm(navPage, 'http://127.0.0.1:18933/report.html?session=S7&channel_id=ch-q&channel_type=2');
+  await walkToLeafC(navPage);
+  await navPage.fill('.reportContent', 'LEAF-KEEP');
+  await navPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await navPage.waitForTimeout(200); // inside the 2500ms bridge round trip
+  // real history transition (what the OS back gesture produces), not the frozen control
+  await navPage.evaluate(() => { window.history.back(); });
+  // read the hash while still waiting on the bridge: the suppressed navigation
+  // must have re-synced the URL to the rendered leaf. (After the submit resolves
+  // the page navigates to the success page, so this has to be observed early.)
+  await navPage.waitForTimeout(700);
+  const navHash = await navPage.evaluate(() => window.location.hash);
+  await navPage.waitForTimeout(2500);
+  const navPayload = submissions.length ? submissions[submissions.length - 1] : null;
+  check('P1-E: the URL is re-synced to the rendered leaf after the suppressed navigation',
+    navHash === '#1-12-121', `hash=${navHash}`);
+  check('P1-E: a back gesture during the bridge wait cannot file the wrong category',
+    !!navPayload && navPayload.category_no === '121' && navPayload.remark === 'LEAF-KEEP',
+    `payload=${JSON.stringify(navPayload)}`);
+  await navPage.close();
+
+  // ---------- Probe 9: the resubmit the cancel message asks for must be safe ----------
+  // Previously the URL and the rendered form diverged after a suppressed
+  // navigation, so following the "提交内容已变更，请重新提交" dialog filed the
+  // complaint against the stale hash (a real parent node). Assert the resubmit
+  // lands on the LEAF, never a parent or an empty category.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false;
+  const hashPage = await browser.newPage();
+  const hashDialogs = [];
+  await hashPage.addInitScript(() => {
+    window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 600) };
+  });
+  hashPage.on('dialog', (d) => { hashDialogs.push(d.message()); d.accept(); });
+  await openForm(hashPage, 'http://127.0.0.1:18933/report.html?session=S8&channel_id=ch-q&channel_type=2');
+  await walkToLeafC(hashPage);
+  await hashPage.fill('.reportContent', 'RESUBMIT');
+  await hashPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await hashPage.waitForTimeout(150);
+  await hashPage.evaluate(() => { window.history.back(); });
+  await hashPage.waitForTimeout(1500);
+  const first = submissions.length ? submissions[submissions.length - 1] : null;
+  // If the first submit was refused, resubmit as the dialog instructed.
+  if (submissions.length === 0) {
+    await hashPage.waitForTimeout(100);
+    await hashPage.evaluate(() => document.querySelector('.reportSubmit').click());
+    await hashPage.waitForTimeout(1200);
+  }
+  const final = submissions.length ? submissions[submissions.length - 1] : null;
+  const anyWrong = [first, final].some((s) => s && s.category_no !== '121');
+  check('P1-E: every submitted category is the rendered leaf, not a stale parent',
+    !anyWrong && !!final && final.category_no === '121',
+    `posts=${submissions.length} first=${JSON.stringify(first)} final=${JSON.stringify(final)} dialogs=${JSON.stringify(hashDialogs)}`);
+  await hashPage.close();
+
+  // ---------- Probe 9b: the payload source is pinned in isolation ----------
+  // yujiawei: the two halves of the round-6 fix mask each other, because
+  // syncUrlToRender() always restores the hash before the post-await read. Make
+  // the hash and the render disagree WITHOUT firing hashchange (replaceState
+  // does not), so syncUrlToRender never runs and the only way to file the leaf
+  // is to take the category from the rendered identity rather than the URL.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false;
+  const srcPage = await browser.newPage();
+  await srcPage.addInitScript(() => {
+    window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 400) };
+  });
+  srcPage.on('dialog', (d) => d.dismiss());
+  await openForm(srcPage, 'http://127.0.0.1:18933/report.html?session=S9b&channel_id=ch-q&channel_type=2');
+  await walkToLeafC(srcPage);
+  await srcPage.fill('.reportContent', 'SRC-PIN');
+  // Divert the URL to the PARENT without a hashchange event, so nothing re-syncs it.
+  await srcPage.evaluate(() => {
+    history.replaceState(null, '', window.location.pathname + window.location.search + '#12');
+  });
+  const splitHash = await srcPage.evaluate(() => window.location.hash);
+  await srcPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await srcPage.waitForTimeout(1200);
+  const srcPayload = submissions.length ? submissions[submissions.length - 1] : null;
+  check('P1-G: the filed category comes from the rendered draft, not the URL hash',
+    !!srcPayload && srcPayload.category_no === '121',
+    `hash=${splitHash} payload=${JSON.stringify(srcPayload)}`);
+  await srcPage.close();
+
+  // ---------- Probe 10: an upload that completes inside the bridge window ----------
+  // The reachable route the CSS freeze cannot cover: the native picker is opened
+  // BEFORE 提交 is tapped and the photo is confirmed during the bridge wait, so the
+  // change event fires on the real input while submitting. Before the fix the
+  // snapshot was empty and the identity check ignored imgs, so the complaint was
+  // persisted with no evidence while the bytes reached storage.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 150; presignDelayMs = 0; presignHang = false;
+  const pickPage = await browser.newPage();
+  await pickPage.addInitScript(() => {
+    window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 1200) };
+  });
+  const pickDialogs = [];
+  pickPage.on('dialog', (d) => { pickDialogs.push(d.message()); d.dismiss(); });
+  await openForm(pickPage, 'http://127.0.0.1:18933/report.html?session=S10&channel_id=ch-q&channel_type=2');
+  await pickPage.fill('.reportContent', 'PICKER-BEFORE');
+  await pickPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await pickPage.waitForTimeout(150); // inside the 1200ms bridge round trip
+  // the picker (opened before submit) delivers its change during the wait
+  await pickPage.evaluate(() => {
+    const inp = document.querySelector('.imgItem .upload');
+    const dt = new DataTransfer(); dt.items.add(new File(['p'], 'late-evidence.png', { type: 'image/png' }));
+    Object.defineProperty(inp, 'files', { value: dt.files, configurable: true });
+    inp.dispatchEvent(new Event('change'));
+  });
+  await pickPage.waitForTimeout(1800); // upload settles, bridge resolves
+  const silentDrop = submissions.some((s) => Array.isArray(s.imgs) && s.imgs.length === 0) && uploads.length > 0;
+  check('P1-B2: an upload completing inside the bridge window is never silently dropped',
+    !silentDrop,
+    `posts=${JSON.stringify(submissions)} uploads=${uploads.length} dialogs=${JSON.stringify(pickDialogs)}`);
+  await pickPage.close();
+
+  // ---------- Probe 11: no native bridge -- 关闭 must not land on report.html ----------
+  // The production path under the shipped CSP: no bridge is ever injected (the
+  // bootstrap iframe is blocked by default-src 'self', and a real shell may not
+  // pre-inject either). im.quit()'s fallback must not be history.back() — the
+  // success page was reached from report.html whose one-time ?session is already
+  // consumed, so going back shows a false "登录态获取失败" banner.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false;
+  const noBridgePage = await browser.newPage();
+  // Deliberately inject NOTHING: no window.IMJSBridge, no WebViewJavascriptBridge.
+  const noBridgeDialogs = [];
+  noBridgePage.on('dialog', (d) => { noBridgeDialogs.push(d.message()); d.dismiss(); });
+  await noBridgePage.goto('http://127.0.0.1:18933/report.html?session=S11&channel_id=ch-q&channel_type=2');
+  await noBridgePage.waitForFunction(() => window.categories && window.categories.length > 0, { timeout: 5000 });
+  await noBridgePage.evaluate(() => { window.location.hash = '#2'; });
+  await noBridgePage.waitForSelector('.reportContent', { state: 'visible', timeout: 5000 });
+  await noBridgePage.fill('.reportContent', 'NO-BRIDGE-CLOSE');
+  await noBridgePage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await noBridgePage.waitForTimeout(1200);
+  const noBridgeSubmitted = submissions.length === 1;
+  // now tap 关闭 on the real success page we were routed to
+  await noBridgePage.waitForSelector('.closeBtn', { timeout: 5000 });
+  await noBridgePage.evaluate(() => document.querySelector('.closeBtn').click());
+  await noBridgePage.waitForTimeout(800);
+  const landedUrl = noBridgePage.url();
+  const authBanner = await noBridgePage.evaluate(() => !!document.querySelector('.authError'));
+  check('P1-H: with no bridge, 关闭 does not return to report.html',
+    noBridgeSubmitted && !/report\.html/.test(landedUrl),
+    `submitted=${noBridgeSubmitted} landedUrl=${landedUrl}`);
+  check('P1-H: with no bridge, 关闭 never shows the false auth-failure banner',
+    noBridgeSubmitted && !authBanner,
+    `authBanner=${authBanner} dialogs=${JSON.stringify(noBridgeDialogs)}`);
+  await noBridgePage.close();
+
+  // ---------- Probe 12: pre-injected bridge must not break page init ----------
+  // The real production shape: the native shell installs window.WebViewJavascriptBridge
+  // BEFORE DOM-ready, so both discovery paths resolve synchronously. bridge.init then
+  // ran on an already-adopted bridge and threw out of im.onReady — which is the first
+  // statement of the DOM-ready handler, killing the session resolve, the categories
+  // load and every binding, with no error banner. All the other probes inject
+  // window.IMJSBridge directly (post-discovery), so none of them covered this.
+  submissions.length = 0; uploads.length = 0; resolveRequests.length = 0; sessionConsumed = false;
+  const preBridgePage = await browser.newPage();
+  await preBridgePage.addInitScript(() => {
+    // The canonical shape: the native shell pre-injects the bridge AND has
+    // already initialised it, so any init() call from the page is the second one
+    // and throws — exactly the condition the review reproduced.
+    window.WebViewJavascriptBridge = {
+      init: function () { throw new Error('WebViewJavascriptBridge::init called twice'); },
+      callHandler: function (m, o, cb) { setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-pre', channelType: 1 })), 40); },
+    };
+  });
+  const preBridgeErrors = [];
+  preBridgePage.on('pageerror', (e) => preBridgeErrors.push(e.message));
+  await preBridgePage.goto('http://127.0.0.1:18933/report.html?session=S12&channel_id=ch-q&channel_type=2');
+  const preBridgeCategories = await preBridgePage.waitForFunction(
+    () => window.categories && window.categories.length > 0, { timeout: 5000 }
+  ).then(() => true).catch(() => false);
+  const preBridgeResolved = await preBridgePage.evaluate(() => !!(window.__reportAuth && window.__reportAuth.token));
+  check('P1-I: a pre-injected bridge does not abort page init',
+    preBridgeCategories && preBridgeResolved && preBridgeErrors.length === 0,
+    `categories=${preBridgeCategories} resolved=${preBridgeResolved} errors=${JSON.stringify(preBridgeErrors)}`);
+  await preBridgePage.close();
+
+  // ---------- Probe 13: auth coverage the suite previously lacked entirely ----------
+  // None of the other checks assert that the one-time session is consumed exactly
+  // once, stripped from the URL, or that the submit carries a credential — the suite
+  // would stay green if the page stopped sending the session or dropped auth.
+  submissions.length = 0; uploads.length = 0; resolveRequests.length = 0; presignRequests.length = 0;
+  submitAuth.length = 0; sessionConsumed = false;
+  const authPage = await browser.newPage();
+  await authPage.addInitScript(() => {
+    window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 50) };
+  });
+  authPage.on('dialog', (d) => d.dismiss());
+  await openForm(authPage, 'http://127.0.0.1:18933/report.html?session=S13&channel_id=ch-q&channel_type=2');
+  const urlAfterResolve = await authPage.evaluate(() => window.location.search);
+  // attach one image so the presign contract is exercised too
+  await authPage.evaluate(() => {
+    const inp = document.querySelector('.imgItem .upload');
+    const dt = new DataTransfer(); dt.items.add(new File(['q'], 'shot.png', { type: 'image/png' }));
+    Object.defineProperty(inp, 'files', { value: dt.files, configurable: true });
+    inp.dispatchEvent(new Event('change'));
+  });
+  await authPage.waitForFunction(() => document.querySelectorAll('.imgs .imgItem').length >= 2, { timeout: 5000 });
+  await authPage.waitForTimeout(600);
+  await authPage.fill('.reportContent', 'AUTH-COVERAGE');
+  await authPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await authPage.waitForTimeout(1200);
+  check('P-AUTH: the one-time ?session is stripped from the URL right after load',
+    !/session=/.test(urlAfterResolve), `search=${urlAfterResolve}`);
+  check('P-AUTH: the session is exchanged exactly once',
+    resolveRequests.length === 1, `resolveRequests=${resolveRequests.length}`);
+  check('P-AUTH: the submit request carries a credential',
+    submitAuth.length === 1 && submitAuth[0].token === 'tok-abc',
+    `submitAuth=${JSON.stringify(submitAuth)}`);
+  check('P-FILE: the presign request carries a filename and an extension-bearing path',
+    presignRequests.length === 1 && presignRequests[0].type === 'report' && /\.[A-Za-z0-9]+$/.test(presignRequests[0].path) && !!presignRequests[0].filename,
+    `presign=${JSON.stringify(presignRequests)}`);
+  await authPage.close();
+
+  // ---------- Round-7 fixes ----------
+  const mkPage = async (session) => {
+    const p = await browser.newPage();
+    p.__dialogs = [];
+    await p.addInitScript(() => {
+      window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 50) };
+    });
+    p.on('dialog', (d) => { p.__dialogs.push(d.message()); d.dismiss(); });
+    await openForm(p, `http://127.0.0.1:18933/report.html?session=${session}&channel_id=ch-q&channel_type=2`);
+    return p;
+  };
+  const attachFile = (p, name, bytes) => p.evaluate(({ name, bytes }) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], name, { type: 'image/png' }));
+    const inp = document.querySelector('.imgItem .upload');
+    Object.defineProperty(inp, 'files', { value: dt.files, configurable: true });
+    inp.dispatchEvent(new Event('change'));
+  }, { name, bytes });
+
+  // #R7-1: deleting a successfully-uploaded image must drop it from the payload.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false; presignUrlOverride = null; failSubmit = false;
+  const delPage = await mkPage('R1');
+  await attachFile(delPage, 'keep-then-delete.png', 'x');
+  await delPage.waitForFunction(() => !!document.querySelector('.imgs .imgItem .uploadRemove'), { timeout: 5000 });
+  await delPage.evaluate(() => { const el = document.querySelector('.uploadRemove'); if (el) el.click(); });
+  await delPage.waitForTimeout(200);
+  await delPage.fill('.reportContent', 'deleted my uploaded photo');
+  await delPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await delPage.waitForTimeout(1200);
+  const delPayload = submissions.length ? submissions[submissions.length - 1] : null;
+  check('P1-DEL: a deleted done image is absent from the submit payload',
+    !!delPayload && Array.isArray(delPayload.imgs) && delPayload.imgs.length === 0,
+    `imgs=${JSON.stringify(delPayload && delPayload.imgs)}`);
+  await delPage.close();
+
+  // #R7-2: a scheme-relative pathname in the presign url must not move the POST off-origin.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false;
+  // Same-origin (passes the origin check) but the PATH is scheme-relative:
+  // pathname+search rebuild would resolve `//host` against the document → leak.
+  presignUrlOverride = 'http://127.0.0.1:18933//127.0.0.1:18934/leak';
+  leakRequests.length = 0;
+  const leakPage = await mkPage('R2');
+  await attachFile(leakPage, 'leaky.png', 'L');
+  await leakPage.waitForTimeout(1500);
+  check('P0-URL: a scheme-relative presign url cannot redirect the upload off-origin',
+    leakRequests.length === 0,
+    `leakRequests=${JSON.stringify(leakRequests)}`);
+  await leakPage.close();
+  presignUrlOverride = null;
+
+  // #R7-3: a drag + the browser's synthetic click must not select the row.
+  submissions.length = 0; sessionConsumed = false;
+  const tapDragPage = await mkPage('R3');
+  await tapDragPage.evaluate(() => { window.location.hash = ''; });
+  await tapDragPage.waitForTimeout(400);
+  const beforeHash = await tapDragPage.evaluate(() => window.location.hash);
+  const draggedThenClicked = await tapDragPage.evaluate(() => {
+    const lis = Array.from(document.querySelectorAll('.categoryBox .item ul li'));
+    const el = lis.find((li) => li.querySelector('label') && li.querySelector('label').textContent === 'Cat D');
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const mk = (type, cx, cy, list) => new TouchEvent(type, { bubbles: true, cancelable: true, composed: true, touches: list, changedTouches: list, targetTouches: list });
+    const t1 = [new Touch({ identifier: 1, target: el, clientX: x, clientY: y })];
+    const t2 = [new Touch({ identifier: 1, target: el, clientX: x, clientY: y - 60 })];
+    el.dispatchEvent(mk('touchstart', x, y, t1));
+    el.dispatchEvent(mk('touchmove', x, y - 60, t2));
+    el.dispatchEvent(mk('touchend', x, y - 60, []));
+    // the click the browser synthesises after a real touch
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return true;
+  });
+  await tapDragPage.waitForTimeout(400);
+  const afterHash = await tapDragPage.evaluate(() => window.location.hash);
+  check('P1-TAP: a drag followed by the synthetic click does not select the row',
+    draggedThenClicked && afterHash === beforeHash,
+    `before=${beforeHash} after=${afterHash}`);
+  await tapDragPage.close();
+
+  // #R7-4: the picker input node survives an upload settle (no async rebuild).
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false;
+  const pickKeepPage = await mkPage('R4');
+  const inputBefore = await pickKeepPage.evaluate(() => { const el = document.querySelector('.imgItem .upload'); el.dataset.tag = 'STABLE'; return el.dataset.tag; });
+  await attachFile(pickKeepPage, 'keep.png', 'k');
+  await pickKeepPage.waitForFunction(() => !!document.querySelector('.imgs .imgItem .uploadRemove'), { timeout: 5000 });
+  const inputAfter = await pickKeepPage.evaluate(() => { const el = document.querySelector('.imgItem .upload'); return el ? el.dataset.tag : null; });
+  check('P1-PICK: the picker input node survives an upload settle (no rebuild)',
+    inputBefore === 'STABLE' && inputAfter === 'STABLE',
+    `before=${inputBefore} after=${inputAfter}`);
+  await pickKeepPage.close();
+
+  // #R7-8: the i18n payload lands asynchronously (a getJSON round-trip on
+  // document.ready). If the reporter types before it arrives, an unmarked
+  // textarea had its val() overwritten by the i18n string, and report.html
+  // snapshots that polluted value straight into the filed complaint. Delay the
+  // payload, type first, and assert the typed text survives both in the DOM and
+  // in the filed remark.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false; failSubmit = false;
+  i18nDelayMs = 2000;
+  const i18nPage = await mkPage('R-i18n');
+  const typedText = 'MY OWN COMPLAINT TEXT';
+  await i18nPage.fill('.reportContent', typedText);
+  // The payload is still in flight (delayed); this proves the probe observes the
+  // pre-i18n DOM rather than a post-i18n no-op.
+  const valBeforeI18n = await i18nPage.inputValue('.reportContent');
+  await i18nPage.waitForTimeout(2600);
+  const valAfterI18n = await i18nPage.inputValue('.reportContent');
+  check('P1-I18N: a delayed i18n payload does not clobber typed complaint text',
+    valBeforeI18n === typedText && valAfterI18n === typedText,
+    `before=${JSON.stringify(valBeforeI18n)} after=${JSON.stringify(valAfterI18n)}`);
+  await i18nPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await i18nPage.waitForTimeout(1200);
+  const i18nPayload = submissions.length ? submissions[submissions.length - 1] : null;
+  check('P1-I18N: the filed remark is the typed text, not the localized placeholder',
+    !!i18nPayload && i18nPayload.remark === typedText,
+    `remark=${JSON.stringify(i18nPayload && i18nPayload.remark)}`);
+  await i18nPage.close();
+  i18nDelayMs = 0;
+
+  // #R7-5: an unknown outcome keeps the button inert but releases navigation.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false; failSubmit = true;
+  const unknownPage = await mkPage('R5');
+  await unknownPage.fill('.reportContent', 'unknown outcome');
+  await unknownPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await unknownPage.waitForTimeout(1200);
+  const unknownInert = await unknownPage.evaluate(() => getComputedStyle(document.querySelector('.reportSubmit')).pointerEvents === 'none');
+  await unknownPage.evaluate(() => { window.location.hash = ''; });
+  await unknownPage.waitForTimeout(400);
+  const navReleased = await unknownPage.evaluate(() =>
+    getComputedStyle(document.querySelector('.reportFormBox')).display === 'none' &&
+    getComputedStyle(document.querySelector('.categoryBox')).display !== 'none');
+  check('P2-UNKNOWN: an unknown outcome keeps the submit button inert',
+    unknownInert && unknownPage.__dialogs.some((m) => /结果未知/.test(m)),
+    `inert=${unknownInert} dialogs=${JSON.stringify(unknownPage.__dialogs)}`);
+  check('P2-UNKNOWN: an unknown outcome releases navigation (no permanent trap)',
+    navReleased, `navReleased=${navReleased}`);
+  // Critical-1 regression: after a 502 the outcome is unknown, but the button is
+  // only pointer-events:none — which blocks real pointer input, not a programmatic
+  // activation (the exact a11y click path). A 2nd POST would file a duplicate
+  // complaint against a server with no idempotency key. Re-activate three ways.
+  const postsAfterUnknown = submissions.length;
+  await unknownPage.evaluate(() => {
+    const el = document.querySelector('.reportSubmit');
+    el.click();
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    el.click();
+  });
+  await unknownPage.waitForTimeout(800);
+  check('P2-UNKNOWN: a programmatic re-activation after 502 cannot file a second complaint',
+    postsAfterUnknown === 1 && submissions.length === 1,
+    `posts=${submissions.length} dialogs=${JSON.stringify(unknownPage.__dialogs)}`);
+  await unknownPage.close();
+  failSubmit = false;
+
+  // #R7-6: back after a successful submit must not re-show the login-failure banner.
+  submissions.length = 0; uploads.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false; failSubmit = false;
+  const backPage = await mkPage('R6');
+  await backPage.fill('.reportContent', 'submitted then back');
+  await backPage.evaluate(() => document.querySelector('.reportSubmit').click());
+  await backPage.waitForSelector('.closeBtn', { timeout: 5000 });
+  await backPage.goBack();
+  await backPage.waitForTimeout(1500);
+  const backBanner = await backPage.evaluate(() => !!document.querySelector('.authError'));
+  const backUrl = backPage.url();
+  check('P1-BACK: back after a successful submit shows no false auth-failure banner',
+    !backBanner && /report_success\.html/.test(backUrl),
+    `banner=${backBanner} url=${backUrl}`);
+  await backPage.close();
+
+  // #R7-7: an initial load whose URL already carries a LEAF hash must still
+  // render a BOUND picker. The leaf deep-link branch shows the form without
+  // going through renderCategories(), so before the fix the form was rendered
+  // against the static <input type=file> that had no change handler — the
+  // picker was visible but tapping it did nothing (no request at all).
+  submissions.length = 0; uploads.length = 0; resolveRequests.length = 0;
+  presignRequests.length = 0; sessionConsumed = false; uploadDelayMs = 0;
+  presignDelayMs = 0; presignHang = false; presignUrlOverride = null; failSubmit = false;
+  const leafHashPage = await browser.newPage();
+  leafHashPage.__dialogs = [];
+  await leafHashPage.addInitScript(() => {
+    window.IMJSBridge = { callHandler: (m, o, cb) => setTimeout(() => cb(JSON.stringify({ err_code: 200, channelID: 'ch-native', channelType: 1 })), 50) };
+  });
+  leafHashPage.on('dialog', (d) => { leafHashPage.__dialogs.push(d.message()); d.dismiss(); });
+  // Load straight onto the leaf (#2 === Cat D) instead of setting the hash after
+  // load, so applyHashNavigation() takes the leaf branch on first render.
+  await leafHashPage.goto('http://127.0.0.1:18933/report.html?session=R7&channel_id=ch-q&channel_type=2#2');
+  await leafHashPage.waitForSelector('.reportContent', { state: 'visible', timeout: 5000 });
+  const leafPickerCount = await leafHashPage.evaluate(() => document.querySelectorAll('.imgs .imgItem .upload').length);
+  // Only drive the picker if it exists; a regression must show up as a FAIL on
+  // this check, not as an uncaught throw that aborts the whole probe run.
+  if (leafPickerCount === 1) {
+    await attachFile(leafHashPage, 'leaf-hash.png', 'L');
+    await leafHashPage.waitForTimeout(800);
+  }
+  check('P2-1: a leaf-hash deep link still renders a bound picker',
+    leafPickerCount === 1 && presignRequests.length === 1,
+    `pickers=${leafPickerCount} presign=${presignRequests.length} dialogs=${JSON.stringify(leafHashPage.__dialogs)}`);
+  await leafHashPage.close();
+
+  // #R7-8 Critical-2: after a failed upload tile is removed, re-picking the SAME
+  // file must start a fresh presign. The picker is now a single reused <input>
+  // (round-7 P1-PICK), so its .value is no longer implicitly reset by a rebuild.
+  // uploadChange() must clear it, or the native picker treats the identical
+  // selection as "no change" and silently does nothing.
+  //
+  // A headless probe cannot open the real OS dialog, so model the browser's own
+  // rule — a native pick fires `change` only when .value differs from the current
+  // one — by shimming .value. Setting .value on a file input is otherwise
+  // restricted to '', which is exactly the reset under test, so the shim lets the
+  // page's `this.value = ''` be observed while reproducing the no-op on re-pick.
+  const installValueModel = (p) => p.evaluate(() => {
+    const inp = document.querySelector('.imgItem .upload');
+    if (!inp) return;
+    let current = inp.value; // '' until the first pick
+    Object.defineProperty(inp, 'value', {
+      configurable: true,
+      get() { return current; },
+      set(v) { current = v; },
+    });
+  });
+  const nativeSelect = (p, name) => p.evaluate(({ name }) => {
+    const inp = document.querySelector('.imgItem .upload');
+    if (!inp) return 'no-picker';
+    const fakePath = 'C:\\fakepath\\' + name;
+    if (inp.value === fakePath) return 'noop'; // identical native pick → no change event
+    const dt = new DataTransfer();
+    dt.items.add(new File(['x'], name, { type: 'image/png' }));
+    Object.defineProperty(inp, 'files', { value: dt.files, configurable: true });
+    inp.value = fakePath;
+    inp.dispatchEvent(new Event('change'));
+    return 'fired';
+  }, { name });
+
+  submissions.length = 0; uploads.length = 0; presignRequests.length = 0;
+  sessionConsumed = false; uploadDelayMs = 0; presignDelayMs = 0; presignHang = false;
+  presignUrlOverride = null; failSubmit = false; failUpload = true;
+  const retryPage = await mkPage('R8');
+  await installValueModel(retryPage);
+  const firstPick = await nativeSelect(retryPage, 'retry-same.png');
+  await retryPage.waitForFunction(
+    () => !!document.querySelector('.imgs .imgItem.upload-failed .uploadRemove'),
+    { timeout: 5000 });
+  const valueAfterFirst = await retryPage.evaluate(() => document.querySelector('.imgItem .upload').value);
+  const presignAfterFirst = presignRequests.length;
+  // Remove the failed tile (the page tells the user to "移除或重试"), then pick
+  // the very same file again.
+  await retryPage.evaluate(() => { const el = document.querySelector('.uploadRemove'); if (el) el.click(); });
+  await retryPage.waitForTimeout(150);
+  const secondPick = await nativeSelect(retryPage, 'retry-same.png');
+  await retryPage.waitForFunction(
+    () => document.querySelectorAll('.imgs .imgItem:not(.imgsPicker)').length >= 1,
+    { timeout: 5000 }).catch(() => {});
+  const presignAfterSecond = presignRequests.length;
+  check('P2-RETRY: re-picking the same file after a failed upload starts a new presign',
+    firstPick === 'fired' && valueAfterFirst === '' && presignAfterFirst === 1
+      && secondPick === 'fired' && presignAfterSecond === 2,
+    `first=${firstPick} value=${JSON.stringify(valueAfterFirst)} presign1=${presignAfterFirst} second=${secondPick} presign2=${presignAfterSecond}`);
+  await retryPage.close();
+  failUpload = false;
+
+  // ---------- Probe 3: CSP must not carry the inert bridge source ----------
+  const csp = fs.readFileSync(path.resolve(__dirname, '../../../../nginx.conf.template'), 'utf8');
+  // Parse directive-wise, not with a single-space/semicolon-anchored regex: a
+  // `frame-src 'self' https:` written last with no trailing ';' (or separated by a
+  // tab) would otherwise make the match null and silently skip the assertion.
+  const cspMatch = csp.match(/add_header\s+Content-Security-Policy\s+"([^"]*)"/);
+  const directive = cspMatch ? cspMatch[1] : '';
+  const directives = directive.split(';').map((d) => d.trim()).filter(Boolean);
+  const frameSrcDirective = directives.find((d) => /^frame-src\b/.test(d));
+  check('P1-C: CSP does not assert the inert __bridge_loaded__ source',
+    !directive.includes('__bridge_loaded__'), directive.includes('__bridge_loaded__') ? 'still present' : 'clean');
+  check('P1-C: frame-src is absent, or not widened to a scheme source',
+    !frameSrcDirective || !/(^|\s)https:(\s|$)/.test(frameSrcDirective),
+    frameSrcDirective || '(no frame-src)');
+  // Every host-source in frame-src must be a parseable CSP host (no underscores),
+  // so the class of defect this guards is closed, not just the one literal.
+  const frameHosts = frameSrcDirective ? frameSrcDirective.replace(/^frame-src\s+/, '').split(/\s+/).filter((s) => /^https?:\/\//.test(s)) : [];
+  const badHost = frameHosts.find((s) => /_[^./]*\.|\/\/[^/]*_/.test(s));
+  check('P1-C: every frame-src host-source is a parseable CSP host',
+    !badHost, badHost ? `invalid host-source: ${badHost}` : `${frameHosts.length} host-source(s) checked`);
+
+  await browser.close();
+  server.close();
+  leakServer.close();
+  const failed = results.filter((r) => !r.pass);
+  // Floor: this job is the only guard here that could shrink to zero assertions
+  // and still pass. Fail if the suite loses checks rather than reporting green.
+  const MIN_PROBES = 20;
+  if (results.length < MIN_PROBES) {
+    console.log(`FAIL  probe count ${results.length} < minimum ${MIN_PROBES}`);
+    process.exit(1);
+  }
+  console.log(`\n${results.length - failed.length}/${results.length} probes passed`);
+  process.exit(failed.length ? 1 : 0);
+})();
