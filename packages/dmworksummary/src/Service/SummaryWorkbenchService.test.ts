@@ -79,14 +79,17 @@ describe("SummaryWorkbenchService", () => {
     postTurn.mockResolvedValue(clarificationTurn());
 
     await expect(
-      service.sendMessage({
-        sessionId: "session-1",
-        message: "帮我总结风险",
-        inputOrigin: "user",
-        requestId: "request-1",
-        scopeVersion: 1,
-        scope,
-      })
+      service.sendMessage(
+        {
+          sessionId: "session-1",
+          message: "帮我总结风险",
+          inputOrigin: "user",
+          requestId: "request-1",
+          scopeVersion: 1,
+          scope,
+        },
+        {}
+      )
     ).resolves.toMatchObject({
       messageId: "10",
       resultType: "clarification",
@@ -143,7 +146,7 @@ describe("SummaryWorkbenchService", () => {
 
     await service.sendMessage(input, options);
     service.streamMessage(input, {}, options);
-    await service.loadSession("session-1", options);
+    await service.loadSession("session-1", options, true);
     await service.confirmWorkflow(
       {
         sessionId: "session-1",
@@ -177,18 +180,21 @@ describe("SummaryWorkbenchService", () => {
   it("builds a direct team workflow request when requested", async () => {
     postTurn.mockResolvedValue(clarificationTurn());
 
-    await service.sendMessage({
-      sessionId: "session-1",
-      message: "直接生成多人总结",
-      inputOrigin: "system_intent",
-      action: "start_team_workflow",
-      requestId: "request-team-1",
-      scopeVersion: 1,
-      scope: {
-        ...scope,
-        participants: [{ userId: "u1", userName: "张三" }],
+    await service.sendMessage(
+      {
+        sessionId: "session-1",
+        message: "直接生成多人总结",
+        inputOrigin: "system_intent",
+        action: "start_team_workflow",
+        requestId: "request-team-1",
+        scopeVersion: 1,
+        scope: {
+          ...scope,
+          participants: [{ userId: "u1", userName: "张三" }],
+        },
       },
-    });
+      {}
+    );
 
     expect(postTurn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -213,7 +219,8 @@ describe("SummaryWorkbenchService", () => {
         scopeVersion: 1,
         scope,
       },
-      { onDone, onError }
+      { onDone, onError },
+      {}
     );
     const handlers: SummaryWorkspaceStreamHandlers | undefined =
       streamTurn.mock.calls[streamTurn.mock.calls.length - 1]?.[1];
@@ -245,7 +252,8 @@ describe("SummaryWorkbenchService", () => {
         scopeVersion: 1,
         scope,
       },
-      { onError }
+      { onError },
+      {}
     );
     const handlers: SummaryWorkspaceStreamHandlers | undefined =
       invalidStream.mock.calls[invalidStream.mock.calls.length - 1]?.[1];
@@ -270,7 +278,8 @@ describe("SummaryWorkbenchService", () => {
         scopeVersion: 1,
         scope,
       },
-      { onError }
+      { onError },
+      {}
     );
     const handlers: SummaryWorkspaceStreamHandlers | undefined =
       streamTurn.mock.calls[streamTurn.mock.calls.length - 1]?.[1];
@@ -308,14 +317,17 @@ describe("SummaryWorkbenchService", () => {
     });
 
     await expect(
-      service.confirmWorkflow({
-        sessionId: "session-1",
-        proposalVersion: 3,
-        proposalToken: "proposal-token",
-        scopeVersion: 1,
-        scope,
-        idempotencyKey: "confirm-key",
-      })
+      service.confirmWorkflow(
+        {
+          sessionId: "session-1",
+          proposalVersion: 3,
+          proposalToken: "proposal-token",
+          scopeVersion: 1,
+          scope,
+          idempotencyKey: "confirm-key",
+        },
+        {}
+      )
     ).resolves.toMatchObject({
       resultType: "workflow_started",
       workflow: { taskId: 88, scope: "team" },
@@ -471,6 +483,7 @@ describe("SummaryWorkbenchService", () => {
       contract_version: "2",
       max_time_range_days: 90,
       direct_team_workflow: true,
+      mixed_sources: true,
     });
     await expect(
       service.getCapabilities({ spaceId: "space-a" })
@@ -479,6 +492,7 @@ describe("SummaryWorkbenchService", () => {
       contract_version: "2",
       max_time_range_days: 90,
       direct_team_workflow: true,
+      mixed_sources: true,
     });
     expect(getCapabilities).toHaveBeenCalledWith({ spaceId: "space-a" });
   });
@@ -486,7 +500,9 @@ describe("SummaryWorkbenchService", () => {
   it("treats History data:null as an empty server session", async () => {
     getHistory.mockResolvedValueOnce(null);
 
-    await expect(service.loadSession("session-empty")).resolves.toMatchObject({
+    await expect(
+      service.loadSession("session-empty", {}, true)
+    ).resolves.toMatchObject({
       sessionId: "session-empty",
       contractVersion: "2",
       empty: true,
@@ -496,6 +512,31 @@ describe("SummaryWorkbenchService", () => {
         referencedTaskIds: [],
       },
       modelOptions: { messages: [], workflow: null },
+    });
+  });
+
+  it("forwards mixedSources=false to History adaptation", async () => {
+    getHistory.mockResolvedValueOnce({
+      contract_version: "2",
+      session_id: "mixed-session",
+      messages: [],
+      state: {
+        ...state(),
+        summary_context: {
+          ...state().summary_context,
+          documents: [{ document_id: "doc-1", title: "Document" }],
+        },
+      },
+    });
+
+    await expect(
+      service.loadSession("mixed-session", {}, false)
+    ).resolves.toMatchObject({
+      scope: {
+        selectedChannels: [expect.objectContaining({ chatId: "chat-1" })],
+        documents: [expect.objectContaining({ documentId: "doc-1" })],
+      },
+      scopeIssues: ["mixed_sources_disabled"],
     });
   });
 
@@ -520,13 +561,13 @@ describe("SummaryWorkbenchService", () => {
       },
     });
 
-    await expect(service.loadSession("expired-session")).resolves.toMatchObject(
-      {
-        sessionId: "expired-session",
-        empty: true,
-        modelOptions: { messages: [], workflow: null },
-      }
-    );
+    await expect(
+      service.loadSession("expired-session", {}, true)
+    ).resolves.toMatchObject({
+      sessionId: "expired-session",
+      empty: true,
+      modelOptions: { messages: [], workflow: null },
+    });
   });
 
   it("loads only the reference metadata needed by the workbench", async () => {

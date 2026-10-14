@@ -11,6 +11,7 @@ import summaryWorkbenchService, {
 import { genRequestId, genSessionId } from "../../utils/summaryHelpers";
 import { contextItemsFromScope } from "./adapter";
 import type { SummaryWorkbenchHistoryHydration } from "./adapter";
+import type { SummaryWorkbenchScopeIssue } from "./scopePolicy";
 import {
   applySummaryResponse,
   attachSummaryMessageProcess,
@@ -49,11 +50,13 @@ export interface UseSummaryWorkbenchOptions {
   layout?: SummaryWorkbenchModel["layout"];
   autoHydrate?: boolean;
   preferStreaming?: boolean;
+  mixedSources: boolean;
   service?: SummaryWorkbenchControllerService;
   createSessionId?: () => string;
   createRequestId?: () => string;
   createIdempotencyKey?: () => string;
   onSessionIdChange?: (sessionId: string) => void;
+  onScopeNormalized?: () => void;
   workflowPollIntervalMs?: number;
 }
 
@@ -100,7 +103,12 @@ export interface SummaryWorkbenchController {
 }
 
 export type SummaryWorkbenchHydrationResult =
-  | { status: "hydrated"; sessionId: string }
+  | {
+      status: "hydrated";
+      sessionId: string;
+      scopeIssues?: SummaryWorkbenchScopeIssue[];
+      scopeWasNormalized?: boolean;
+    }
   | { status: "empty" }
   | { status: "failed" }
   | { status: "cancelled" };
@@ -169,7 +177,7 @@ const MAX_SUMMARY_WORKFLOW_POLL_FAILURES = 5;
 const MAX_SUMMARY_WORKFLOW_POLL_BACKOFF_MS = 30_000;
 
 export default function useSummaryWorkbench(
-  options: UseSummaryWorkbenchOptions = {}
+  options: UseSummaryWorkbenchOptions
 ): SummaryWorkbenchController {
   const serviceRef = useRef<SummaryWorkbenchControllerService>(
     options.service ?? summaryWorkbenchService
@@ -180,8 +188,10 @@ export default function useSummaryWorkbench(
     options.createIdempotencyKey ?? genRequestId
   );
   const onSessionIdChangeRef = useRef(options.onSessionIdChange);
+  const onScopeNormalizedRef = useRef(options.onScopeNormalized);
   const spaceIdRef = useRef(normalizeSpaceId(options.spaceId));
   const preferStreamingRef = useRef(options.preferStreaming ?? true);
+  const mixedSourcesRef = useRef(options.mixedSources);
   const workflowPollIntervalMsRef = useRef(
     options.workflowPollIntervalMs ?? DEFAULT_SUMMARY_WORKFLOW_POLL_INTERVAL_MS
   );
@@ -203,8 +213,10 @@ export default function useSummaryWorkbench(
 
   serviceRef.current = options.service ?? summaryWorkbenchService;
   onSessionIdChangeRef.current = options.onSessionIdChange;
+  onScopeNormalizedRef.current = options.onScopeNormalized;
   spaceIdRef.current = normalizeSpaceId(options.spaceId);
   preferStreamingRef.current = options.preferStreaming ?? true;
+  mixedSourcesRef.current = options.mixedSources;
   workflowPollIntervalMsRef.current = Math.max(
     1,
     options.workflowPollIntervalMs ?? DEFAULT_SUMMARY_WORKFLOW_POLL_INTERVAL_MS
@@ -586,7 +598,7 @@ export default function useSummaryWorkbench(
           ? serviceRef.current.streamMessage(input, callbacks, {
               spaceId: spaceIdRef.current,
             })
-          : serviceRef.current.streamMessage(input, callbacks);
+          : serviceRef.current.streamMessage(input, callbacks, {});
         if (isCurrent() && !flight.fallbackStarted) {
           flight.stream = stream;
         } else {
@@ -823,10 +835,14 @@ export default function useSummaryWorkbench(
 
       let flight!: HydrationFlight;
       const promise = serviceRef.current
-        .loadSession(sessionId, {
-          signal: controller.signal,
-          ...(spaceIdRef.current ? { spaceId: spaceIdRef.current } : {}),
-        })
+        .loadSession(
+          sessionId,
+          {
+            signal: controller.signal,
+            ...(spaceIdRef.current ? { spaceId: spaceIdRef.current } : {}),
+          },
+          mixedSourcesRef.current
+        )
         .then((hydration: SummaryWorkbenchHistoryHydration) => {
           if (hydrationRef.current !== flight || epochRef.current !== epoch) {
             return { status: "cancelled" } as const;
@@ -868,7 +884,15 @@ export default function useSummaryWorkbench(
             )
           );
           notifySessionId(nextSessionId);
-          return { status: "hydrated", sessionId: nextSessionId } as const;
+          if (hydration.scopeWasNormalized) {
+            onScopeNormalizedRef.current?.();
+          }
+          return {
+            status: "hydrated",
+            sessionId: nextSessionId,
+            scopeIssues: [...(hydration.scopeIssues ?? [])],
+            scopeWasNormalized: hydration.scopeWasNormalized ?? false,
+          } as const;
         })
         .catch((reason: unknown) => {
           if (hydrationRef.current !== flight || epochRef.current !== epoch) {
@@ -1022,10 +1046,14 @@ export default function useSummaryWorkbench(
 
       const operationVersion = operationVersionRef.current;
       try {
-        const hydration = await serviceRef.current.loadSession(sessionId, {
-          signal: controller.signal,
-          ...(spaceIdRef.current ? { spaceId: spaceIdRef.current } : {}),
-        });
+        const hydration = await serviceRef.current.loadSession(
+          sessionId,
+          {
+            signal: controller.signal,
+            ...(spaceIdRef.current ? { spaceId: spaceIdRef.current } : {}),
+          },
+          mixedSourcesRef.current
+        );
         consecutiveFailures = 0;
         if (!active || controller.signal.aborted) return;
         if (hydration.empty) {

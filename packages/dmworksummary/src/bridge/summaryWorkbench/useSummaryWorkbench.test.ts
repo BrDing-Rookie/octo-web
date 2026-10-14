@@ -14,9 +14,18 @@ import {
   SummaryWorkspaceApiError,
   type SummaryWorkbenchScope,
 } from "./protocol";
-import useSummaryWorkbench, {
+import useSummaryWorkbenchWithCapability, {
   type SummaryWorkbenchControllerService,
+  type UseSummaryWorkbenchOptions,
 } from "./useSummaryWorkbench";
+
+function useSummaryWorkbench(
+  options: Omit<UseSummaryWorkbenchOptions, "mixedSources"> & {
+    mixedSources?: boolean;
+  }
+) {
+  return useSummaryWorkbenchWithCapability({ mixedSources: true, ...options });
+}
 
 const initialScope: SummaryWorkbenchScope = {
   selectedChannels: [
@@ -948,12 +957,71 @@ describe("useSummaryWorkbench", () => {
 
     expect(loadSession).toHaveBeenCalledWith(
       "persisted-session",
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      true
     );
     expect(result.current.sessionId).toBe("session-1");
     expect(result.current.scope).toEqual(serverScope);
     expect(canSaveCurrentPreview(result.current.model)).toBe(true);
     expect(onSessionIdChange).toHaveBeenCalledWith("session-1");
+    unmount();
+  });
+
+  it("forwards mixedSources=false through the hook hydration boundary", async () => {
+    loadSession.mockResolvedValue({
+      ...previewHydration(serverScope),
+      scopeIssues: ["mixed_sources_disabled"],
+      scopeWasNormalized: false,
+    });
+    const { result, unmount } = renderHook(() =>
+      useSummaryWorkbench({
+        initialSessionId: "session-1",
+        initialScope,
+        autoHydrate: false,
+        mixedSources: false,
+        service,
+      })
+    );
+
+    let hydrationResult!: Awaited<
+      ReturnType<typeof result.current.hydrateSession>
+    >;
+    await act(async () => {
+      hydrationResult = await result.current.hydrateSession("session-1");
+    });
+
+    expect(loadSession).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      false
+    );
+    expect(hydrationResult).toMatchObject({
+      status: "hydrated",
+      scopeIssues: ["mixed_sources_disabled"],
+      scopeWasNormalized: false,
+    });
+    unmount();
+  });
+
+  it("notifies when automatic hydration normalizes a persisted scope", async () => {
+    loadSession.mockResolvedValue({
+      ...previewHydration(serverScope),
+      scopeWasNormalized: true,
+    });
+    const onScopeNormalized = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useSummaryWorkbench({
+        initialSessionId: "session-1",
+        initialScope,
+        mixedSources: false,
+        service,
+        onScopeNormalized,
+      })
+    );
+
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    expect(onScopeNormalized).toHaveBeenCalledTimes(1);
     unmount();
   });
 

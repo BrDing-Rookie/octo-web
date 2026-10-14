@@ -282,9 +282,13 @@ vi.mock("../../ui/SummaryWorkbench", () => ({
   ),
 }));
 vi.mock("../documentSource/DocumentSelectorModal", () => ({
-  default: ({ visible, selected, onConfirm }: any) =>
+  default: ({ visible, selected, maxSelect, onConfirm }: any) =>
     visible ? (
-      <div data-testid="document-selector" data-selected={selected.length}>
+      <div
+        data-testid="document-selector"
+        data-selected={selected.length}
+        data-max-select={maxSelect}
+      >
         <button
           type="button"
           onClick={() =>
@@ -308,12 +312,13 @@ vi.mock("../documentSource/DocumentSelectorModal", () => ({
 }));
 
 vi.mock("../../components/ChatSelectorModal", () => ({
-  default: ({ visible, mode, channel, onConfirm }: any) =>
+  default: ({ visible, mode, channel, maxSelect, onConfirm }: any) =>
     visible ? (
       <div
         data-testid="chat-selector"
         data-mode={mode ?? "chat"}
         data-channel-id={channel?.channelID ?? ""}
+        data-max-select={maxSelect}
       >
         <button type="button" onClick={() => onConfirm([])}>
           empty-chat
@@ -1173,7 +1178,7 @@ describe("SummaryWorkbenchFeature", () => {
           referenced_task_ids: [],
         },
       },
-    }).scope;
+    }, true).scope;
     const current = controller({
       scope: invalidScope,
       viewState: {
@@ -1242,7 +1247,7 @@ describe("SummaryWorkbenchFeature", () => {
     expect(mocks.loadParticipantCandidates).toHaveBeenCalledTimes(1);
   });
 
-  it("selects documents into document-only scope when docs capability is enabled", () => {
+  it("selects documents into mixed scope (keeps chats and time range) when the mixed capability is on", () => {
     mocks.docsOn = true;
     mocks.docsSearchOn = true;
     const current = controller({
@@ -1258,9 +1263,10 @@ describe("SummaryWorkbenchFeature", () => {
     });
     mocks.useSummaryWorkbench.mockReturnValue(current);
 
-    render(<SummaryWorkbenchFeature spaceId="space-a" />, {
-      legacyRoot: true,
-    });
+    render(
+      <SummaryWorkbenchFeature spaceId="space-a" mixedSources />,
+      { legacyRoot: true }
+    );
     expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
       "data-available-contexts",
       "chat,document,participant,time_range"
@@ -1269,14 +1275,173 @@ describe("SummaryWorkbenchFeature", () => {
     fireEvent.click(screen.getByRole("button", { name: "open-document" }));
     fireEvent.click(screen.getByRole("button", { name: "choose-document" }));
 
-    expect(current.updateScope).toHaveBeenCalledWith(
+    expect(current.updateScope).not.toHaveBeenCalled();
+    expect(mocks.modalConfirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        selectedChannels: [],
-        documents: [{ documentId: "doc-a", title: "Doc A" }],
-        participants: [],
-        timeRange: null,
+        title: "summary.workbench.scopeChange.participantTitle",
+        content: "summary.workbench.scopeChange.participantContent",
       })
     );
+    const confirmation = mocks.modalConfirm.mock.calls[0][0] as {
+      onOk: () => void;
+    };
+    confirmation.onOk();
+
+    // After confirmation, chats and their time range stay while participants
+    // are removed to satisfy the document-source contract.
+    expect(current.updateScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedChannels: [{ chatId: "chat-a", chatType: "group", name: "A" }],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+        participants: [],
+        timeRange: {
+          start: "2026-09-01T00:00:00Z",
+          end: "2026-09-02T00:00:00Z",
+          label: "昨天",
+        },
+      })
+    );
+  });
+
+  it("reduces each picker limit by the selected count from the other source", () => {
+    mocks.docsOn = true;
+    mocks.docsSearchOn = true;
+    const current = controller({
+      scope: scope({
+        selectedChannels: Array.from({ length: 25 }, (_, index) => ({
+          chatId: `chat-${index}`,
+          chatType: "group" as const,
+          name: `Chat ${index}`,
+        })),
+        documents: Array.from({ length: 10 }, (_, index) => ({
+          documentId: `doc-${index}`,
+          title: `Document ${index}`,
+        })),
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" mixedSources />, {
+      legacyRoot: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "open-chat" }));
+    expect(screen.getByTestId("chat-selector")).toHaveAttribute(
+      "data-max-select",
+      "20"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "open-document" }));
+    expect(screen.getByTestId("document-selector")).toHaveAttribute(
+      "data-max-select",
+      "5"
+    );
+  });
+
+  it("rejects a 31st mixed source at the centralized scope guard", () => {
+    mocks.docsOn = true;
+    mocks.docsSearchOn = true;
+    const current = controller({
+      scope: scope({
+        selectedChannels: Array.from({ length: 30 }, (_, index) => ({
+          chatId: `chat-${index}`,
+          chatType: "group" as const,
+          name: `Chat ${index}`,
+        })),
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" mixedSources />, {
+      legacyRoot: true,
+    });
+    expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
+      "data-available-contexts",
+      "chat,participant,time_range"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "open-document" }));
+
+    expect(current.updateScope).not.toHaveBeenCalled();
+    expect(mocks.toastWarning).toHaveBeenCalledWith(
+      "summary.workbench.notice.mixedSourceLimitExceeded"
+    );
+  });
+
+  it("blocks workflow confirmation while the retained scope is invalid", async () => {
+    const current = controller({
+      scope: scope({
+        selectedChannels: [
+          { chatId: "chat-a", chatType: "group", name: "A" },
+        ],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, {
+      legacyRoot: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "confirm-workflow" }));
+
+    expect(current.confirmWorkflow).not.toHaveBeenCalled();
+    expect(mocks.toastWarning).toHaveBeenCalledWith(
+      "summary.workbench.notice.mixedSourcesUnavailable"
+    );
+  });
+
+  it("keeps the scope issue visible ahead of a transient transport error", () => {
+    const current = controller({
+      scope: scope({
+        selectedChannels: [
+          { chatId: "chat-a", chatType: "group", name: "A" },
+        ],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      }),
+      error: { kind: "transport" },
+      viewState: { errorMessage: "network failure" },
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, {
+      legacyRoot: true,
+    });
+
+    expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
+      "data-error-message",
+      "summary.workbench.notice.mixedSourcesUnavailable"
+    );
+  });
+
+  it("allows an already-invalid hydrated scope to reduce toward the limit", () => {
+    mocks.docsOn = true;
+    mocks.docsSearchOn = true;
+    const current = controller({
+      scope: scope({
+        selectedChannels: Array.from({ length: 30 }, (_, index) => ({
+          chatId: `chat-${index}`,
+          chatType: "group" as const,
+          name: `Chat ${index}`,
+        })),
+        documents: [
+          { documentId: "doc-a", title: "Document A" },
+          { documentId: "doc-b", title: "Document B" },
+        ],
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" mixedSources />, {
+      legacyRoot: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "open-document" }));
+    fireEvent.click(screen.getByRole("button", { name: "choose-document" }));
+
+    expect(current.updateScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedChannels: expect.any(Array),
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      })
+    );
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
   });
 
   it.each(["chat", "document"] as const)(
@@ -1317,6 +1482,188 @@ describe("SummaryWorkbenchFeature", () => {
       expect(
         screen.queryByTestId(`${picker}-selector`)
       ).not.toBeInTheDocument();
+    }
+  );
+
+  it("clears chats and time range when documents are selected with the mixed capability off", () => {
+    mocks.docsOn = true;
+    mocks.docsSearchOn = true;
+    const current = controller({
+      scope: scope({
+        selectedChannels: [{ chatId: "chat-a", chatType: "group", name: "A" }],
+        timeRange: {
+          start: "2026-09-01T00:00:00Z",
+          end: "2026-09-02T00:00:00Z",
+          label: "昨天",
+        },
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, { legacyRoot: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "open-document" }));
+    fireEvent.click(screen.getByRole("button", { name: "choose-document" }));
+
+    // Gate OFF: selecting a document clears the chat side (pre-mixed mutual
+    // exclusion) so no mixed wire shape can be composed.
+    expect(current.updateScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedChannels: [],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+        timeRange: null,
+      })
+    );
+  });
+
+  it("restores chat and document entries on a document scope when the mixed capability is off", () => {
+    mocks.docsOn = true;
+    mocks.docsSearchOn = true;
+    const current = controller({
+      scope: scope({
+        selectedChannels: [{ chatId: "chat-a", chatType: "group", name: "A" }],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, { legacyRoot: true });
+
+    // Gate OFF + documents present: restore the pre-mixed menu shape. "chat"
+    // stays available so a user who picked documents can switch to a chat
+    // scope, and replaceSelectedChannels(scope, chats, false) still clears
+    // documents, so mutual exclusion holds and no mixed scope is composed.
+    expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
+      "data-available-contexts",
+      "chat,document"
+    );
+    expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
+      "data-can-send",
+      "false"
+    );
+    expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
+      "data-error-message",
+      "summary.workbench.notice.mixedSourcesUnavailable"
+    );
+  });
+
+  it("keeps documents when removing a chat from a retained mixed scope with the capability off", () => {
+    const current = controller({
+      scope: scope({
+        selectedChannels: [
+          { chatId: "chat-a", chatType: "group", name: "A" },
+          { chatId: "chat-b", chatType: "group", name: "B" },
+        ],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, {
+      legacyRoot: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "remove-chat" }));
+
+    expect(current.updateScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedChannels: [
+          { chatId: "chat-b", chatType: "group", name: "B" },
+        ],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      })
+    );
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+  });
+
+  it("allows an orthogonal template edit while a retained gate-OFF mixed scope is being repaired", () => {
+    const current = controller({
+      scope: scope({
+        selectedChannels: [
+          { chatId: "chat-a", chatType: "group", name: "A" },
+        ],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, {
+      legacyRoot: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "choose-template" }));
+
+    expect(current.updateScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: expect.objectContaining({ templateId: "weekly" }),
+      })
+    );
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+  });
+
+  it("surfaces normalization from every hook hydration path", () => {
+    const current = controller();
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, {
+      legacyRoot: true,
+    });
+    const options = mocks.useSummaryWorkbench.mock.calls[0][0] as {
+      onScopeNormalized: () => void;
+    };
+    options.onScopeNormalized();
+
+    expect(mocks.toastInfo).toHaveBeenCalledWith(
+      "summary.workbench.notice.hydratedScopeNormalized"
+    );
+  });
+
+  it("keeps the chat entry when the document selector is unavailable and the capability is off", () => {
+    // Gate OFF with the document selector unavailable: the menu must NOT
+    // collapse to empty. "chat" remains the single recovery entry so a user
+    // whose scope (e.g. hydrated from a persisted mixed snapshot) still holds
+    // documents can switch to a chat scope and escape a canSend=false state.
+    mocks.docsOn = false;
+    mocks.docsSearchOn = false;
+    const current = controller({
+      scope: scope({
+        selectedChannels: [],
+        documents: [{ documentId: "doc-a", title: "Doc A" }],
+      }),
+    });
+    mocks.useSummaryWorkbench.mockReturnValue(current);
+
+    render(<SummaryWorkbenchFeature spaceId="space-a" />, { legacyRoot: true });
+
+    expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
+      "data-available-contexts",
+      "chat"
+    );
+  });
+
+  it.each([
+    [[], "chat"],
+    [[{ chatId: "chat-a", chatType: "group" as const, name: "A" }], "chat,time_range"],
+  ])(
+    "keeps the gate-on time range tied to chats when document search is unavailable",
+    (selectedChannels, expectedContexts) => {
+      mocks.docsOn = false;
+      mocks.docsSearchOn = false;
+      mocks.useSummaryWorkbench.mockReturnValue(
+        controller({
+          scope: scope({
+            selectedChannels,
+            documents: [{ documentId: "doc-a", title: "Doc A" }],
+          }),
+        })
+      );
+
+      render(<SummaryWorkbenchFeature spaceId="space-a" mixedSources />, {
+        legacyRoot: true,
+      });
+
+      expect(screen.getByTestId("workbench-ui")).toHaveAttribute(
+        "data-available-contexts",
+        expectedContexts
+      );
     }
   );
 

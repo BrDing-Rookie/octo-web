@@ -23,8 +23,6 @@ import TimeRangeSelector, {
   type TimeRangeSelectorLabels,
 } from "../../components/TimeRangeSelector";
 import {
-  MAX_CHAT_SELECT,
-  MAX_DOCUMENT_SELECT,
   MAX_PARTICIPANT_SELECT,
 } from "../../constants/limits";
 import { TOPIC_TEMPLATES } from "../../constants/templates";
@@ -44,6 +42,12 @@ import {
 import useSummaryWorkbench, {
   sameSummaryWorkbenchScope,
 } from "../../bridge/summaryWorkbench/useSummaryWorkbench";
+import {
+  maxSelectableChats,
+  maxSelectableDocuments,
+  summaryWorkbenchScopeIssues,
+  summaryWorkbenchSourceCount,
+} from "../../bridge/summaryWorkbench/scopePolicy";
 import SummaryWorkbench, {
   type SummaryWorkbenchAction,
   type SummaryWorkbenchContextKind,
@@ -87,6 +91,7 @@ import {
   scopeChannelsToCandidates,
   scopeDocumentsToItems,
   scopeParticipantsToCandidates,
+  withChatOnlyTimeRange,
   type WorkbenchMemberCandidate,
 } from "./scope";
 import "./SummaryWorkbenchFeature.css";
@@ -104,6 +109,7 @@ export interface SummaryWorkbenchFeatureProps {
   onOpenTask?: (taskId: number) => void;
   maxTimeRangeDays?: number;
   directTeamWorkflow?: boolean;
+  mixedSources?: boolean;
   messaging?: SummaryMessagingPort;
 }
 
@@ -176,6 +182,7 @@ export default function SummaryWorkbenchFeature({
   onOpenTask,
   maxTimeRangeDays = DEFAULT_SUMMARY_WORKSPACE_MAX_TIME_RANGE_DAYS,
   directTeamWorkflow = false,
+  mixedSources = false,
   messaging,
 }: SummaryWorkbenchFeatureProps) {
   const { t, format } = useI18n();
@@ -268,6 +275,10 @@ export default function SummaryWorkbenchFeature({
     initialScope,
     layout: embedded ? "panel" : "full",
     autoHydrate: initialSessionId.length > 0,
+    mixedSources,
+    onScopeNormalized: () => {
+      Toast.info(t("summary.workbench.notice.hydratedScopeNormalized"));
+    },
     onSessionIdChange: (sessionId) => {
       if (sessionId) {
         writeSummaryWorkbenchSession(storageScope, sessionId);
@@ -620,12 +631,69 @@ export default function SummaryWorkbenchFeature({
       ? { ...item, label: referencedTask.title || item.label }
       : item
   );
+  // Mixed document+chat: when the server advertises mixed_sources, the chat
+  // time-range entry stays available alongside documents (it scopes the chat
+  // side only); the participant entry remains exclusive with documents.
+  // Gate OFF keeps pure-source writes mutually exclusive, while a retained
+  // mixed scope stays visible and recoverable until the user removes one side.
+  const mixedDocumentsSelected = (workbench.scope.documents ?? []).length > 0;
+  const mixedChatPresent = workbench.scope.selectedChannels.length > 0;
+  const scopeIssues = summaryWorkbenchScopeIssues(workbench.scope, {
+    mixedSources,
+  });
+  const scopeIssueMessageKey = scopeIssues.includes(
+    "mixed_source_limit_exceeded"
+  )
+    ? "summary.workbench.notice.mixedSourceLimitExceeded"
+    : scopeIssues.includes("mixed_sources_disabled")
+      ? "summary.workbench.notice.mixedSourcesUnavailable"
+      : scopeIssues.length > 0
+        ? "summary.workbench.notice.scopeRequiresAdjustment"
+        : undefined;
+  const chatMaxSelect = maxSelectableChats(workbench.scope, { mixedSources });
+  const documentMaxSelect = maxSelectableDocuments(workbench.scope, {
+    mixedSources,
+  });
+  // The time range scopes the chat side only: it is offered on a document
+  // scope only when at least one chat is also selected (and the capability is
+  // on), so a document-only scope can never acquire a picker range.
   const availableContextKinds: SummaryWorkbenchContextKind[] =
-    (workbench.scope.documents ?? []).length > 0
-      ? ["chat", ...(documentSelectorAvailable ? (["document"] as const) : [])]
+    mixedDocumentsSelected
+      ? mixedSources
+        ? [
+            ...(chatMaxSelect > 0 || workbench.scope.selectedChannels.length > 0
+              ? (["chat"] as const)
+              : []),
+            ...(documentSelectorAvailable &&
+            (documentMaxSelect > 0 ||
+              (workbench.scope.documents ?? []).length > 0)
+              ? (["document"] as const)
+              : []),
+            ...(mixedChatPresent ? (["time_range"] as const) : []),
+          ]
+        : documentSelectorAvailable
+          ? [
+              // Gate OFF (default): keep the pre-mixed menu shape. "chat" is
+              // still offered so a user who picked documents can switch to a
+              // chat scope, and replaceSelectedChannels(scope, chats, false)
+              // still clears documents, so mutual exclusion holds — no illegal
+              // mixed scope can be composed.
+              "chat",
+              "document",
+            ]
+          : // Gate OFF with the document selector unavailable: keep "chat" as
+            // the single recovery entry (not an empty menu) so a user whose
+            // scope still holds documents can switch to a chat scope.
+            ["chat"]
       : [
-          "chat",
-          ...(documentSelectorAvailable ? (["document"] as const) : []),
+          ...(chatMaxSelect > 0 || workbench.scope.selectedChannels.length > 0
+            ? (["chat"] as const)
+            : []),
+          ...(documentSelectorAvailable &&
+          (documentMaxSelect > 0 ||
+            (workbench.scope.documents ?? []).length > 0)
+            ? (["document"] as const)
+            : []),
           "participant",
           "time_range",
         ];
@@ -637,6 +705,7 @@ export default function SummaryWorkbenchFeature({
     canSend:
       !busy &&
       !documentScopeUnavailable &&
+      scopeIssues.length === 0 &&
       participantScopeReady &&
       (composerHasCustomText ||
         (lastFailedAction !== null && structuredGenerate) ||
@@ -653,9 +722,11 @@ export default function SummaryWorkbenchFeature({
         ? "summary.workbench.composer.generate"
         : "summary.workbench.composer.send",
     resumeLastSessionDisabled: busy || hasUnpersistedDraft,
-    errorMessage: displayErrorKey
-      ? t(displayErrorKey)
-      : workbench.viewState.errorMessage || participantScopeErrorMessage,
+    errorMessage: scopeIssueMessageKey
+      ? t(scopeIssueMessageKey)
+      : displayErrorKey
+        ? t(displayErrorKey)
+        : workbench.viewState.errorMessage || participantScopeErrorMessage,
     referencePreviewOpen,
     referencePreviewId,
     availableContextKinds,
@@ -668,6 +739,31 @@ export default function SummaryWorkbenchFeature({
     const baseScope = workbench.scope;
     if (sameSummaryWorkbenchScope(baseScope, nextScope)) {
       onApplied?.();
+      return;
+    }
+    const currentIssues = summaryWorkbenchScopeIssues(baseScope, {
+      mixedSources,
+    });
+    const nextIssues = summaryWorkbenchScopeIssues(nextScope, {
+      mixedSources,
+    });
+    const introducesIssue = nextIssues.some(
+      (issue) => !currentIssues.includes(issue)
+    );
+    const growsInvalidSourceSet =
+      nextIssues.length > 0 &&
+      summaryWorkbenchSourceCount(nextScope) >
+        summaryWorkbenchSourceCount(baseScope);
+    if (
+      nextIssues.length > 0 &&
+      (introducesIssue || growsInvalidSourceSet)
+    ) {
+      const messageKey = nextIssues.includes("mixed_source_limit_exceeded")
+        ? "summary.workbench.notice.mixedSourceLimitExceeded"
+        : nextIssues.includes("mixed_sources_disabled")
+          ? "summary.workbench.notice.mixedSourcesUnavailable"
+          : "summary.workbench.notice.scopeRequiresAdjustment";
+      Toast.warning(t(messageKey));
       return;
     }
     const apply = () => {
@@ -782,6 +878,15 @@ export default function SummaryWorkbenchFeature({
 
   const handleResultAction = async (action: SummaryWorkbenchAction) => {
     if (action === "confirm_workflow") {
+      if (scopeIssues.length > 0) {
+        Toast.warning(
+          t(
+            scopeIssueMessageKey ??
+              "summary.workbench.notice.scopeRequiresAdjustment"
+          )
+        );
+        return;
+      }
       const response = await runStartedTask(() => workbench.confirmWorkflow());
       observeWorkflow(response);
       return;
@@ -815,6 +920,25 @@ export default function SummaryWorkbenchFeature({
       return;
     }
     if (kind === "document" && !documentSelectorAvailable) return;
+    if (
+      (kind === "chat" &&
+        chatMaxSelect === 0 &&
+        workbench.scope.selectedChannels.length === 0) ||
+      (kind === "document" &&
+        documentMaxSelect === 0 &&
+        (workbench.scope.documents ?? []).length === 0)
+    ) {
+      Toast.warning(t("summary.workbench.notice.mixedSourceLimitExceeded"));
+      return;
+    }
+    // A reference-summary stack is incompatible with a mixed scope (the
+    // backend rejects referenced_task_ids on a document+chat scope). Block
+    // attaching a new reference while the scope is mixed, mirroring the
+    // backend boundary.
+    if (kind === "reference" && mixedDocumentsSelected && mixedChatPresent) {
+      Toast.info(t("summary.workbench.notice.referencesUnsupportedForMixedScope"));
+      return;
+    }
     if (kind === "participant" && !canSelectParticipants(workbench.scope)) {
       Toast.info(t("summary.workbench.notice.selectSingleChatForParticipants"));
       return;
@@ -833,7 +957,7 @@ export default function SummaryWorkbenchFeature({
     if (kind === "template" && conversationEstablished) return;
     const shouldClearTemplateText =
       kind === "template" && templateFilledComposer.current !== null;
-    const result = removeScopeContext(workbench.scope, kind, id);
+    const result = removeScopeContext(workbench.scope, kind, id, mixedSources);
     updateScopeWithPreviewGuard(result.scope, () => {
       if (shouldClearTemplateText) {
         templateFilledComposer.current = null;
@@ -845,6 +969,14 @@ export default function SummaryWorkbenchFeature({
       }
       if (result.participantsCleared) {
         Toast.info(t("summary.workbench.notice.participantsCleared"));
+      }
+      if (result.referencesCleared) {
+        setReferencedTask(null);
+        setReferencePreviewOpen(false);
+        Toast.info(t("summary.workbench.notice.referencesCleared"));
+      }
+      if (result.timeRangeCleared) {
+        Toast.info(t("summary.workbench.notice.timeRangeCleared"));
       }
     });
   };
@@ -982,7 +1114,6 @@ export default function SummaryWorkbenchFeature({
       setHasAcceptedDispatch(false);
       return;
     }
-
     // Commit the storage swap only after the target session has been
     // validated. A failed/cancelled hydration leaves both slots and the
     // recovery bar untouched.
@@ -1177,7 +1308,7 @@ export default function SummaryWorkbenchFeature({
         />
       </div>
 
-      {referencePreviewOpen && referencedTask && (
+      {referencePreviewOpen && referencedTask && referencedTaskId !== undefined && (
         <SummaryReferenceSidePanel
           id={referencePreviewId}
           taskId={referencedTask.task_id}
@@ -1188,13 +1319,14 @@ export default function SummaryWorkbenchFeature({
       <ChatSelectorModal
         visible={openSelector === "chat"}
         selected={scopeChannelsToCandidates(workbench.scope.selectedChannels)}
-        maxSelect={MAX_CHAT_SELECT}
+        maxSelect={chatMaxSelect}
         groupOnly={workbench.scope.participants.length > 0}
         onConfirm={(chats: ChatCandidate[]) => {
           if (busy) return;
           const result = replaceSelectedChannels(
             workbench.scope,
-            chatCandidatesToScope(chats)
+            chatCandidatesToScope(chats),
+            mixedSources
           );
           if (result.scope === workbench.scope) {
             setOpenSelector(null);
@@ -1204,6 +1336,14 @@ export default function SummaryWorkbenchFeature({
             setOpenSelector(null);
             if (result.participantsCleared) {
               Toast.info(t("summary.workbench.notice.participantsCleared"));
+            }
+            if (result.referencesCleared) {
+              setReferencedTask(null);
+              setReferencePreviewOpen(false);
+              Toast.info(t("summary.workbench.notice.referencesCleared"));
+            }
+            if (result.timeRangeCleared) {
+              Toast.info(t("summary.workbench.notice.timeRangeCleared"));
             }
           });
         }}
@@ -1213,23 +1353,42 @@ export default function SummaryWorkbenchFeature({
       <DocumentSelectorModal
         visible={openSelector === "document" && documentSelectorAvailable}
         selected={scopeDocumentsToItems(workbench.scope.documents ?? [])}
-        maxSelect={MAX_DOCUMENT_SELECT}
+        maxSelect={documentMaxSelect}
         onConfirm={(documents: DocSearchItem[]) => {
           if (busy) return;
           const result = replaceSelectedDocuments(
             workbench.scope,
-            documentsToScope(documents)
+            documentsToScope(documents),
+            mixedSources
           );
           if (result.scope === workbench.scope) {
             setOpenSelector(null);
             return;
           }
-          updateScopeWithPreviewGuard(result.scope, () => {
-            setOpenSelector(null);
-            if (result.participantsCleared) {
-              Toast.info(t("summary.workbench.notice.participantsCleared"));
-            }
-          });
+          const applyDocuments = () => {
+            updateScopeWithPreviewGuard(result.scope, () => {
+              setOpenSelector(null);
+              if (result.referencesCleared) {
+                setReferencedTask(null);
+                setReferencePreviewOpen(false);
+                Toast.info(t("summary.workbench.notice.referencesCleared"));
+              }
+              if (result.timeRangeCleared) {
+                Toast.info(t("summary.workbench.notice.timeRangeCleared"));
+              }
+            });
+          };
+          if (result.participantsCleared) {
+            Modal.confirm({
+              title: t("summary.workbench.scopeChange.participantTitle"),
+              content: t("summary.workbench.scopeChange.participantContent"),
+              okText: t("summary.workbench.scopeChange.confirm"),
+              cancelText: t("summary.common.cancel"),
+              onOk: applyDocuments,
+            });
+            return;
+          }
+          applyDocuments();
         }}
         onCancel={() => setOpenSelector(null)}
       />
@@ -1276,12 +1435,12 @@ export default function SummaryWorkbenchFeature({
             onChange={(timeRange: SummaryWorkbenchTimeRangeScope | null) => {
               if (busy) return;
               updateScopeWithPreviewGuard(
-                {
+                withChatOnlyTimeRange({
                   ...workbench.scope,
                   timeRange: timeRange
                     ? { ...timeRange, source: "picker" }
                     : null,
-                },
+                }),
                 () => setOpenSelector(null)
               );
             }}

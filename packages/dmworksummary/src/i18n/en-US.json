@@ -279,6 +279,8 @@
       "title": "Change the summary scope?",
       "content": "The current preview will remain in history but can no longer be saved. Generate again to use the new scope.",
       "proposalContent": "The current collaboration proposal will become invalid and must be regenerated before collaboration can start.",
+      "participantTitle": "Remove selected participants?",
+      "participantContent": "Document sources cannot be combined with collaboration participants. Continuing will remove the current participant selection.",
       "changedWhileConfirming": "The summary scope changed. Please make the selection again.",
       "confirm": "Change scope"
     },
@@ -288,7 +290,14 @@
       "participantsPrunedArtifactInvalidated": "Participant access changed. The previous result remains in history; generate a new result to continue.",
       "participantCandidatesLoadFailed": "Some group members failed to load. Try again.",
       "participantsUnsupportedForSelectedChats": "Participants require group chats only, with no more than 30 chats selected.",
-      "selectSingleChatForParticipants": "Participant selection supports up to 30 group chats only."
+      "selectSingleChatForParticipants": "Participant selection supports up to 30 group chats only.",
+      "referencesCleared": "Mixed sources can't stack a referenced summary yet; the reference was removed.",
+      "referencesUnsupportedForMixedScope": "Mixed sources can't stack a referenced summary yet.",
+      "timeRangeCleared": "The time range applies to chat sources only; it was cleared because no chats are selected.",
+      "mixedSourceLimitExceeded": "You can select up to 30 chats and documents in total. Remove a source and try again.",
+      "mixedSourcesUnavailable": "Mixed sources aren't available right now. Remove either the chats or documents before generating.",
+      "scopeRequiresAdjustment": "Some source selections are incompatible. Adjust the scope before generating.",
+      "hydratedScopeNormalized": "Some incompatible selections from this conversation were adjusted. Review the current scope."
     },
     "lastSession": {
       "label": "Last conversation"

@@ -9,13 +9,15 @@ function capability(
     enabled = true,
     contractVersion = "2",
     maxTimeRangeDays = 90,
-    directTeamWorkflow = false
+    directTeamWorkflow = false,
+    mixedSources = false
 ) {
     return {
         enabled,
         contract_version: contractVersion,
         max_time_range_days: maxTimeRangeDays,
         direct_team_workflow: directTeamWorkflow,
+        mixed_sources: mixedSources,
     };
 }
 
@@ -85,6 +87,34 @@ describe("SummaryWorkbenchAvailability", () => {
         now += 1;
         await availability.resolve("space-a");
         expect(source.getCapabilities).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+        [true, true],
+        [false, false],
+    ])("round-trips mixed_sources=%s", async (mixedSources, expected) => {
+        const availability = new SummaryWorkbenchAvailability({
+            getCapabilities: vi.fn().mockResolvedValue(
+                capability(true, "2", 90, false, mixedSources)
+            ),
+        });
+
+        await expect(availability.resolve("space-a")).resolves.toMatchObject({
+            status: "enabled",
+            mixedSources: expected,
+        });
+    });
+
+    it("treats an omitted additive mixed_sources field as false", async () => {
+        const { mixed_sources: _omitted, ...payload } = capability();
+        const availability = new SummaryWorkbenchAvailability({
+            getCapabilities: vi.fn().mockResolvedValue(payload),
+        });
+
+        await expect(availability.resolve("space-a")).resolves.toMatchObject({
+            status: "enabled",
+            mixedSources: false,
+        });
     });
 
     it.each([

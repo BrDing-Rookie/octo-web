@@ -39,6 +39,10 @@ import {
   type SummaryWorkspaceTurnDTO,
   type SummaryWorkspaceWorkflowDTO,
 } from "./protocol";
+import {
+  summaryWorkbenchScopeIssues,
+  type SummaryWorkbenchScopeIssue,
+} from "./scopePolicy";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -46,7 +50,9 @@ export interface SummaryWorkbenchHistoryHydration {
   sessionId: string;
   contractVersion: string;
   scope: SummaryWorkbenchScope;
+  scopeIssues?: SummaryWorkbenchScopeIssue[];
   modelOptions: CreateSummaryWorkbenchModelOptions;
+  scopeWasNormalized?: boolean;
   empty?: boolean;
 }
 
@@ -158,7 +164,8 @@ export function adaptSummaryWorkspaceTurn(
 }
 
 export function adaptSummaryWorkspaceHistory(
-  value: unknown
+  value: unknown,
+  mixedSources: boolean
 ): SummaryWorkbenchHistoryHydration {
   const history = decodeSummaryWorkspaceHistory(value);
   const authoritativeState = toAuthoritativeState(history.state);
@@ -293,6 +300,10 @@ export function adaptSummaryWorkspaceHistory(
     sessionId: history.session_id,
     contractVersion: history.contract_version,
     scope,
+    scopeIssues: summaryWorkbenchScopeIssues(authoritativeState.scope, {
+      mixedSources,
+    }),
+    scopeWasNormalized: authoritativeState.scopeWasNormalized,
     modelOptions: {
       scopeVersion: authoritativeState.scopeVersion,
       contextItems: authoritativeState.contextItems,
@@ -328,6 +339,12 @@ export function decodeSummaryWorkspaceCapabilities(
             record.direct_team_workflow,
             "capabilities.direct_team_workflow"
           ),
+    // Additive field absent on older backends → default OFF (fail-closed):
+    // the mixed document+chat selector only appears once the server advertises
+    // it via the admission gate.
+    mixed_sources:
+      optionalBoolean(record.mixed_sources, "capabilities.mixed_sources") ??
+      false,
   };
 }
 
@@ -795,17 +812,18 @@ function requireWorkflow(
 function toAuthoritativeState(
   state: SummaryWorkspaceStateDTO,
   turn?: { messageId: number; actions: SummaryWorkbenchAction[] }
-): SummaryWorkbenchAuthoritativeState {
+): SummaryWorkbenchAuthoritativeState & { scopeWasNormalized: boolean } {
   const scope = toWorkbenchScope(state.summary_context);
-  // Dropping conflicting document scope or extra references mutates scope. Advance
-  // the version so the next request cannot reuse the server's old version
-  // with a different scope hash and fail with a 409 scope conflict. Backend
-  // main accepts a higher client scope_version, persists its scope_json/hash,
-  // and clears folded artifacts; see docs/summary-apps-artifact-review-fixes.md.
+  // Hydration keeps the selected chat/document sources even when the
+  // capability is unavailable. The Feature renders those chips, blocks send,
+  // and asks the user to choose which side to remove. Capability-independent
+  // compatibility normalization still advances scope_version so the next
+  // request cannot reuse the server's old hash.
   const scopeWasNormalized =
     state.summary_context.referenced_task_ids.length !==
-    scope.referencedTaskIds.length ||
-    state.summary_context.selected_channels.length !== scope.selectedChannels.length ||
+      scope.referencedTaskIds.length ||
+    state.summary_context.selected_channels.length !==
+      scope.selectedChannels.length ||
     state.summary_context.participants.length !== scope.participants.length ||
     (state.summary_context.time_range !== null && scope.timeRange === null);
   const scopeVersion = state.scope_version + (scopeWasNormalized ? 1 : 0);
@@ -820,6 +838,7 @@ function toAuthoritativeState(
   return {
     scopeVersion,
     scope,
+    scopeWasNormalized,
     contextItems: contextItemsFromScope(scope),
     currentPreview: state.current_preview
       ? {
@@ -877,26 +896,79 @@ function toAuthoritativeState(
 function toWorkbenchScope(
   context: SummaryWorkspaceContextDTO
 ): SummaryWorkbenchScope {
-  // Match document-selection semantics on hydration too: server snapshots must
-  // not reintroduce chat/participant/time scope that the UI cannot edit together.
+  // The decode boundary enforces three scope invariants unconditionally
+  // (capability-INDEPENDENT — they hold on both gate states, mirroring how
+  // the selection layer would have prevented these shapes from ever being
+  // composed had they gone through the picker instead of an older
+  // persistence):
+  //   I1  participants × documents — the chat picker cannot be a
+  //       team-workspace base while documents are present, so participants
+  //       clear whenever documents exist.
+  //   I2  time_range × documents-without-chats — the time range scopes the
+  //       chat side only, so a document-only scope carrying a range is null'd.
+  //   I3  referenced_task_ids × mixed (documents + channels) — a reference
+  //       stack is incompatible with a mixed scope; the writers clear it on
+  //       the pure→mixed transition, so a persisted mixed+reference
+  //       shape drops the reference here.
+  // These are the same three shapes the outbound selection layer refuses to
+  // compose (scope.ts: replaceSelectedDocuments / replaceSelectedChannels /
+  // withChatOnlyTimeRange / handleContextOpen). Enforcing them at the decode
+  // boundary keeps hydration idempotent with the writers: a snapshot that
+  // disagrees with the current invariants normalizes down to a sendable
+  // scope, and the resulting length delta bumps scope_version (see
+  // toAuthoritativeState) so the next request cannot reuse the server's old
+  // hash and 409.
+  //
+  // Capability OFF is intentionally not normalized here. Persisted chat and
+  // document selections remain visible so the user can resolve the conflict;
+  // the shared scope policy blocks sending until one source side is removed.
   const hasDocuments = context.documents.length > 0;
+  const selectedChannels = context.selected_channels.map((channel) => ({
+    chatId: channel.chat_id,
+    chatType: channel.chat_type,
+    name: channel.name,
+    ...(channel.is_archived === undefined
+      ? {}
+      : { isArchived: channel.is_archived }),
+  }));
+  const documents = context.documents.map((document) => ({
+    documentId: document.document_id,
+    title: document.title ?? document.document_id,
+  }));
+  // I1: participants clear whenever documents are present.
+  const participants = hasDocuments
+    ? []
+    : context.participants.map((participant) => ({
+        userId: participant.user_id,
+        ...(participant.user_name ? { userName: participant.user_name } : {}),
+      }));
+  // I2: null the time range on a document-only scope (documents present, no
+  // chats). A persisted mixed scope retains its chat-side time range even when
+  // the capability is currently unavailable.
+  const timeRange =
+    hasDocuments && selectedChannels.length === 0
+      ? null
+      : context.time_range
+      ? {
+          start: context.time_range.start,
+          end: context.time_range.end,
+          label: context.time_range.label,
+          source: context.time_range.source,
+        }
+      : null;
+  // I3: a mixed scope (documents + channels) cannot carry a reference stack;
+  // drop it here so a persisted pure→mixed transition that never went through
+  // the writer boundary still lands on a sendable scope. The one-reference
+  // cap below then applies to the surviving ids (empty or the single
+  // non-mixed reference).
+  const referencedTaskIdsSource =
+    documents.length > 0 && selectedChannels.length > 0
+      ? []
+      : context.referenced_task_ids;
   return {
-    selectedChannels: hasDocuments ? [] : context.selected_channels.map((channel) => ({
-      chatId: channel.chat_id,
-      chatType: channel.chat_type,
-      name: channel.name,
-      ...(channel.is_archived === undefined
-        ? {}
-        : { isArchived: channel.is_archived }),
-    })),
-    documents: context.documents.map((document) => ({
-      documentId: document.document_id,
-      title: document.title ?? document.document_id,
-    })),
-    participants: hasDocuments ? [] : context.participants.map((participant) => ({
-      userId: participant.user_id,
-      ...(participant.user_name ? { userName: participant.user_name } : {}),
-    })),
+    selectedChannels,
+    documents,
+    participants,
     template: context.template
       ? {
           templateId: context.template.template_id,
@@ -907,19 +979,12 @@ function toWorkbenchScope(
             : { version: context.template.version }),
         }
       : null,
-    timeRange: !hasDocuments && context.time_range
-      ? {
-          start: context.time_range.start,
-          end: context.time_range.end,
-          label: context.time_range.label,
-          source: context.time_range.source,
-        }
-      : null,
+    timeRange,
     // Product supports one referenced summary. Normalize at the decode boundary
     // so the rendered chip and the submitted scope cannot disagree — legacy or
     // malformed server state carrying more than one id gets capped here rather
     // than at render, keeping the wire in agreement with the UI.
-    referencedTaskIds: context.referenced_task_ids.slice(0, 1),
+    referencedTaskIds: referencedTaskIdsSource.slice(0, 1),
   };
 }
 

@@ -163,7 +163,8 @@ export class SummaryWorkbenchService {
           }
           callbacks.onDone?.(response);
         },
-        onError: (event) => reportError(decodeSummaryWorkspaceStreamError(event)),
+        onError: (event) =>
+          reportError(decodeSummaryWorkspaceStreamError(event)),
       },
       options
     );
@@ -171,7 +172,8 @@ export class SummaryWorkbenchService {
 
   async loadSession(
     sessionId: string,
-    options: SummaryWorkbenchRequestOptions = {}
+    options: SummaryWorkbenchRequestOptions = {},
+    mixedSources: boolean
   ): Promise<SummaryWorkbenchHistoryHydration> {
     const response = await this.transport.getHistory(sessionId, options);
     if (response === null) {
@@ -180,11 +182,14 @@ export class SummaryWorkbenchService {
         contractVersion: SUMMARY_WORKSPACE_CONTRACT_VERSION,
         scope: {
           selectedChannels: [],
+          documents: [],
           participants: [],
           template: null,
           timeRange: null,
           referencedTaskIds: [],
         },
+        scopeIssues: [],
+        scopeWasNormalized: false,
         modelOptions: {
           scopeVersion: 1,
           contextItems: [],
@@ -196,7 +201,7 @@ export class SummaryWorkbenchService {
         empty: true,
       };
     }
-    const hydration = adaptSummaryWorkspaceHistory(response);
+    const hydration = adaptSummaryWorkspaceHistory(response, mixedSources);
     if (
       (hydration.modelOptions.messages?.length ?? 0) === 0 &&
       hydration.modelOptions.currentPreview === null &&

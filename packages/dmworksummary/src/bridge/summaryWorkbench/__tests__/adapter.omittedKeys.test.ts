@@ -10,8 +10,13 @@
 // These tests lock the accepted omitted-pointer contract.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { adaptSummaryWorkspaceHistory, adaptSummaryWorkspaceTurn } from '../adapter';
+import {
+  adaptSummaryWorkspaceHistory as adaptSummaryWorkspaceHistoryWithCapability,
+  adaptSummaryWorkspaceTurn,
+} from '../adapter';
 
+const adaptSummaryWorkspaceHistory = (value: unknown) =>
+  adaptSummaryWorkspaceHistoryWithCapability(value, true);
 // A minimal valid turn payload with every optional pointer key OMITTED
 // (the shape a Go omitempty backend actually emits) instead of explicit null.
 function turnWithOmittedPointers(resultType: string, extra?: Record<string, unknown>) {
