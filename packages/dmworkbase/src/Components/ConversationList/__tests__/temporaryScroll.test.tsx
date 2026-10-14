@@ -1,5 +1,6 @@
 import React from "react";
-import { act, cleanup, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WKSDK, { Channel, ChannelInfo, Conversation, ConversationExtra, Message, MessageText, Mention } from "wukongimjssdk";
 import { ConversationWrap } from "../../../Service/Model";
@@ -338,5 +339,213 @@ describe("temporary conversation scroll positioning", () => {
     rerender(<ConversationList {...props} scrollToUnreadToken={1} />);
     flushFrames();
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 120, behavior: "smooth" });
+  });
+});
+
+describe("recent unread jump sequence", () => {
+  function setup() {
+    const conversations = ["a", "b", "c", "d"].map((id) => {
+      const item = conversation(`sequence-${id}`);
+      item.conversation.unread = 1;
+      return item;
+    });
+    const props = {
+      conversations,
+      shouldScrollToUnreadTarget: (item: ConversationWrap) => item.unread > 0,
+    };
+    let token = 0;
+    const view = render(
+      <ConversationList {...props} scrollToUnreadToken={token} />
+    );
+    const root = view.container.querySelector<HTMLDivElement>(
+      ".wk-conversationlist"
+    )!;
+    Object.defineProperty(root, "clientHeight", {
+      configurable: true,
+      value: 100,
+    });
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 10, 300, 100)
+    );
+    const rows = conversations.map(
+      (item) =>
+        view.container.querySelector<HTMLDivElement>(
+          `[data-object-id="${item.channel.channelID}"]`
+        )!
+    );
+    rows.forEach((row, index) => {
+      vi.spyOn(row, "getBoundingClientRect").mockImplementation(
+        () => new DOMRect(0, 10 + index * 60 - root.scrollTop, 300, 60)
+      );
+    });
+    // Content height is 240; the last row cannot reach the viewport top.
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+      root.scrollTop = Math.min(top ?? 0, 140);
+      fireEvent.scroll(root);
+    });
+    root.scrollTo = scrollTo;
+    const jump = () => {
+      view.rerender(
+        <ConversationList {...props} scrollToUnreadToken={++token} />
+      );
+      flushFrames();
+    };
+    const expectTarget = (index: number) => {
+      rows.forEach((row, rowIndex) => {
+        expect(
+          !!row.querySelector(
+            ".wk-conv-unread-num--nudge-a, .wk-conv-unread-num--nudge-b"
+          )
+        ).toBe(rowIndex === index);
+      });
+    };
+    return { ...view, props, root, rows, jump, expectTarget, scrollTo };
+  }
+
+  it("cycles independently of automatic scroll events and nudges targets that cannot reach the top", () => {
+    const { jump, expectTarget, root, scrollTo } = setup();
+    [0, 1, 2, 3, 0, 1].forEach((index) => {
+      jump();
+      expectTarget(index);
+      expect(scrollTo).toHaveBeenLastCalledWith({
+        top: index * 60,
+        behavior: "smooth",
+      });
+      expect(root.scrollTop).toBe(Math.min(index * 60, 140));
+      fireEvent.scroll(root);
+    });
+  });
+
+  it.each(["wheel", "touch", "keyboard", "scrollbar"])(
+    "starts below the visible area after a %s scroll, then resumes the selected sequence",
+    (gesture) => {
+      const { root, jump, expectTarget } = setup();
+      jump();
+      expectTarget(0);
+      if (gesture === "wheel") fireEvent.wheel(root, { deltaY: 30 });
+      if (gesture === "touch") fireEvent.touchMove(root);
+      if (gesture === "keyboard") fireEvent.keyDown(root, { key: "ArrowDown" });
+      if (gesture === "scrollbar") fireEvent.pointerDown(root);
+      root.scrollTop = 20; // b is visible, c starts exactly at the viewport bottom.
+      fireEvent.scroll(root);
+      jump();
+      expectTarget(2);
+      jump();
+      expectTarget(3);
+      jump();
+      expectTarget(0);
+    }
+  );
+
+  it.each(["ArrowDown", "PageDown"])(
+    "recognizes %s scrolling after a conversation row is clicked",
+    async (key) => {
+      const user = userEvent.setup();
+      const { root, rows, jump, expectTarget } = setup();
+      jump();
+      expectTarget(0);
+      await user.click(rows[0]);
+      expect(document.activeElement).toBe(root);
+      await user.keyboard(`{${key}}`);
+      // jsdom does not perform native keyboard scrolling; publish its result.
+      root.scrollTop = 20;
+      fireEvent.scroll(root);
+      jump();
+      expectTarget(2);
+      jump();
+      expectTarget(3);
+    }
+  );
+
+  it("continues the previous sequence when a manual scroll leaves no unread rows below the viewport", () => {
+    const { root, jump, expectTarget } = setup();
+    jump();
+    expectTarget(0);
+    fireEvent.wheel(root, { deltaY: 140 });
+    root.scrollTop = 140;
+    fireEvent.scroll(root);
+    jump();
+    expectTarget(1);
+    jump();
+    expectTarget(2);
+  });
+
+  it("does not treat a gesture without actual scrolling as a manual scroll", () => {
+    const { root, jump, expectTarget } = setup();
+    jump();
+    fireEvent.wheel(root, { deltaY: -10 });
+    jump();
+    expectTarget(1);
+  });
+
+  it("resumes from the first remaining candidate if the previous target is no longer unread", () => {
+    // Removes index 0 (the just-visited target) — the correct answer is index 1,
+    // which coincidentally matches the (-1+1)%n=0 fallback.  This test pins the
+    // "first-element removal" case; the two tests below pin middle/before-cursor
+    // removal where the old fallback would have given the wrong answer.
+    const { props, jump, expectTarget } = setup();
+    jump();
+    props.conversations[0].conversation.unread = 0;
+    jump();
+    expectTarget(1);
+  });
+
+  it("advances to the removed target's successor when a middle element leaves the candidate set", () => {
+    // Sequence: A B C D all unread.  jump→A, jump→B, mark B read, jump should
+    // go to C (B's successor), not back to A (index 0).
+    // This is the exact path reported in the review: t1→A t2→B [B read] t3→C.
+    const { props, jump, expectTarget } = setup(); // a=0, b=1, c=2, d=3
+    jump(); expectTarget(0); // →A
+    jump(); expectTarget(1); // →B
+    props.conversations[1].conversation.unread = 0; // B leaves the candidate set
+    jump(); expectTarget(2); // must be C, not A
+  });
+
+  it("continues forward when an element before the cursor leaves the candidate set", () => {
+    // Sequence: A B C D.  jump→A, jump→B, mark A read (behind the cursor),
+    // jump should continue to C, not wrap around or skip.
+    const { props, jump, expectTarget } = setup();
+    jump(); expectTarget(0); // →A
+    jump(); expectTarget(1); // →B
+    props.conversations[0].conversation.unread = 0; // A leaves the candidate set
+    jump(); expectTarget(2); // must be C
+  });
+
+  it("advances past two simultaneous removals: target and its immediate successor both leave", () => {
+    // Reproduces the blocking defect from round 2 of the review.
+    // Sequence: A B C D.  jump→A, jump→B, mark B and C read simultaneously,
+    // jump should go to D — not reset to A (index 0).
+    // Under the old single-successor memo, both B (target) and C (successor)
+    // have left by activation time, so successorIndex === -1 and the code
+    // fell back to candidates[0] = A, revisiting an already-visited conversation.
+    const { props, jump, expectTarget } = setup(); // a=0, b=1, c=2, d=3
+    jump(); expectTarget(0); // →A
+    jump(); expectTarget(1); // →B
+    // B and C both leave the candidate set before the next activation.
+    props.conversations[1].conversation.unread = 0; // B (current target) gone
+    props.conversations[2].conversation.unread = 0; // C (recorded successor) gone
+    jump(); expectTarget(3); // must be D, not A
+  });
+
+  it("advances correctly when all successors up to the wrap point leave the candidate set", () => {
+    // Sequence: A B C D.  jump→B, mark C and D read, jump should wrap to A
+    // (the first survivor after B in cyclic order), not reset to B (index 0).
+    // This exercises the wrap-around branch of the forward scan.
+    const { props, jump, expectTarget } = setup(); // a=0, b=1, c=2, d=3
+    jump(); expectTarget(0); // →A  (positions the cursor on A first)
+    jump(); expectTarget(1); // →B
+    // C and D leave — all successors after B up to the wrap point are gone.
+    props.conversations[2].conversation.unread = 0; // C gone
+    props.conversations[3].conversation.unread = 0; // D gone
+    jump(); expectTarget(0); // must wrap to A, not stay on B (index 0 in the new 2-item set would be A anyway, but the assertion verifies identity)
+  });
+
+  it("does nothing when there are no unread candidates", () => {
+    const { props, jump, scrollTo } = setup();
+    props.conversations.forEach((item) => {
+      item.conversation.unread = 0;
+    });
+    jump();
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });

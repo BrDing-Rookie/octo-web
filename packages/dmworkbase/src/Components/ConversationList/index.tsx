@@ -375,7 +375,7 @@ export interface ConversationListProps {
    *  pin 与拖拽语义冲突（pin 会强制顶到分组顶端覆盖手动顺序），所以在关注 tab 移除 pin 入口。
    *  最近 tab 仍保留 pin。 */
   hidePin?: boolean;
-  /** 递增 token：变化时滚到第一条 shouldScrollToUnreadTarget 命中的会话 */
+  /** 递增 token：变化时循环定位下一条目标；手动滚动后优先定位视口下方目标 */
   scrollToUnreadToken?: number;
   /** 外部提供导航目标口径，避免列表层重复理解具体业务规则 */
   shouldScrollToUnreadTarget?: (conversation: ConversationWrap) => boolean;
@@ -416,6 +416,19 @@ export default class ConversationList extends Component<
   private lastRenderableItems: ConversationWrap[] = [];
   private scrollFrame: number | null = null;
   private unreadNudgeTimer: number | null = null;
+  private lastUnreadTargetKey?: string;
+  /**
+   * Snapshot of the candidate-set keys in order, recorded at the moment the
+   * last target was committed.  When the target (and any number of its
+   * successors) leave the candidate set between two activations we scan this
+   * snapshot forward from the committed position to find the first key that is
+   * still present, guaranteeing the cycle continues in the right direction
+   * regardless of how many entries have been removed.
+   */
+  private lastUnreadCandidateSnapshot: string[] = [];
+  private lastUnreadCommittedIndex = -1;
+  private manuallyScrolledSinceUnreadJump = false;
+  private manualScrollIntent = false;
   private _storageKey(): string {
     const uid = WKApp.loginInfo?.uid || 'unknown';
     const spaceId = WKApp.shared?.currentSpaceId || 'default';
@@ -463,7 +476,7 @@ export default class ConversationList extends Component<
       this.props.scrollToUnreadToken !== undefined &&
       this.props.scrollToUnreadToken !== prevProps.scrollToUnreadToken
     ) {
-      this.scheduleScrollToFirstUnreadTarget();
+      this.scheduleScrollToNextUnreadTarget();
     }
     const temporaryKey = this.props.temporarilyPinnedConversations?.[0]?.channel.getChannelKey();
     const previousTemporaryKey = prevProps.temporarilyPinnedConversations?.[0]?.channel.getChannelKey();
@@ -511,8 +524,8 @@ export default class ConversationList extends Component<
     }
   }
 
-  private scheduleScrollToFirstUnreadTarget() {
-    this.scheduleScroll(() => this.scrollToFirstUnreadTarget());
+  private scheduleScrollToNextUnreadTarget() {
+    this.scheduleScroll(() => this.scrollToNextUnreadTarget());
   }
 
   private scrolledTemporaryConversationToken?: number;
@@ -547,16 +560,89 @@ export default class ConversationList extends Component<
     });
   }
 
-  private scrollToFirstUnreadTarget() {
+  private scrollToNextUnreadTarget() {
     const shouldTarget = this.props.shouldScrollToUnreadTarget;
     if (!shouldTarget) return;
 
-    const target = this.lastRenderableItems.find((conv) => shouldTarget(conv));
-    if (!target) return;
+    const candidates = this.lastRenderableItems.filter(shouldTarget);
+    if (candidates.length === 0) return;
 
-    if (this.scrollConversationToTop(target.channel, "smooth")) {
-      this.nudgeUnreadBadge(target.channel.getChannelKey());
+    // The cursor must not depend on scrollTop: bottom rows cannot always reach the top.
+    //
+    // When the previous target leaves the candidate set (e.g. marked read),
+    // findIndex returns -1 and (-1 + 1) % n = 0, which silently resets the
+    // cursor to the first candidate instead of advancing past the removed entry.
+    //
+    // Single-removal fix (round 1): pre-record the immediate successor key so
+    // that one departure can be bridged.  But if both the target and its
+    // recorded successor leave before the next activation (e.g. the user marks
+    // several conversations read between two presses) that memo is also stale
+    // and the cursor still fell back to index 0.
+    //
+    // Multi-removal fix (round 2): instead of remembering only the next key,
+    // we snapshot the full ordered candidate list at commit time together with
+    // the committed position.  On the next activation we scan the snapshot
+    // forward from that position (wrapping once) to find the first key that
+    // still exists in the current candidate set.  This correctly bridges any
+    // number of simultaneous departures.
+    const currentKeys = new Set(
+      candidates.map((conv) => conv.channel.getChannelKey())
+    );
+    const previousIndex = candidates.findIndex(
+      (conv) => conv.channel.getChannelKey() === this.lastUnreadTargetKey
+    );
+    let target: ConversationWrap;
+    if (previousIndex !== -1) {
+      // Target is still a candidate — advance normally.
+      target = candidates[(previousIndex + 1) % candidates.length];
+    } else if (this.lastUnreadCandidateSnapshot.length > 0) {
+      // Target left the candidate set.  Walk the snapshot forward from the
+      // committed position (wrapping once) to find the first surviving key.
+      // This handles the case where the target AND one or more of its
+      // successors have all disappeared since the last activation.
+      const snapshotLen = this.lastUnreadCandidateSnapshot.length;
+      let resumeKey: string | undefined;
+      for (let offset = 1; offset <= snapshotLen; offset++) {
+        const key =
+          this.lastUnreadCandidateSnapshot[
+            (this.lastUnreadCommittedIndex + offset) % snapshotLen
+          ];
+        if (currentKeys.has(key)) {
+          resumeKey = key;
+          break;
+        }
+      }
+      const resumeIndex = resumeKey
+        ? candidates.findIndex(
+            (conv) => conv.channel.getChannelKey() === resumeKey
+          )
+        : 0;
+      target = candidates[resumeIndex !== -1 ? resumeIndex : 0];
+    } else {
+      target = candidates[0];
     }
+    const root = this.listRef.current;
+    if (this.manuallyScrolledSinceUnreadJump && root) {
+      const viewportBottom =
+        root.getBoundingClientRect().top + root.clientTop + root.clientHeight;
+      target = candidates.find((conv) => {
+        const node = this.itemRefs.get(conv.channel.getChannelKey());
+        return node && node.getBoundingClientRect().top >= viewportBottom;
+      }) ?? target;
+    }
+
+    this.manuallyScrolledSinceUnreadJump = false;
+    this.lastUnreadTargetKey = target.channel.getChannelKey();
+    // Snapshot the current candidate order and remember the committed position
+    // so that the next activation can scan forward past any number of removals.
+    this.lastUnreadCandidateSnapshot = candidates.map((conv) =>
+      conv.channel.getChannelKey()
+    );
+    this.lastUnreadCommittedIndex = this.lastUnreadCandidateSnapshot.indexOf(
+      this.lastUnreadTargetKey
+    );
+    this.scrollConversationToTop(target.channel, "smooth");
+    this.nudgeUnreadBadge(this.lastUnreadTargetKey);
   }
 
   private scrollConversationToTop(channel: Channel, behavior: ScrollBehavior): boolean {
@@ -567,6 +653,10 @@ export default class ConversationList extends Component<
     const rootRect = root.getBoundingClientRect();
     const nodeRect = node.getBoundingClientRect();
     const targetTop = Math.max(0, root.scrollTop + nodeRect.top - rootRect.top);
+
+    // Scroll events alone cannot tell a gesture from smooth/programmatic scroll.
+    // A fresh user gesture can arm manual navigation again, even during a jump.
+    this.manualScrollIntent = false;
 
     if (typeof root.scrollTo === "function") {
       root.scrollTo({
@@ -616,7 +706,30 @@ export default class ConversationList extends Component<
     return this.props.disablePinSplit ? !inSet : inSet;
   };
 
+  private handleManualScrollIntent = () => {
+    this.manualScrollIntent = true;
+  };
+
+  private handleScrollKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      event.defaultPrevented ||
+      target.closest('input, textarea, select, [contenteditable="true"]')
+    ) return;
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+      this.handleManualScrollIntent();
+    }
+  };
+
+  private handleScrollbarPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    // Native scrollbar presses target the scroll container, not its rows.
+    if (event.target === event.currentTarget) this.handleManualScrollIntent();
+  };
+
   _handleScroll = () => {
+    if (this.manualScrollIntent) {
+      this.manuallyScrolledSinceUnreadJump = true;
+    }
     this.contextMenusContext.hide();
   };
 
@@ -1525,7 +1638,13 @@ export default class ConversationList extends Component<
         ref={this.listRef}
         id="wk-conversationlist"
         className="wk-conversationlist"
+        // Row clicks must keep native keyboard scroll events inside the unread navigator.
+        tabIndex={this.props.shouldScrollToUnreadTarget ? 0 : undefined}
         onScroll={this._handleScroll}
+        onWheelCapture={this.handleManualScrollIntent}
+        onTouchMoveCapture={this.handleManualScrollIntent}
+        onKeyDownCapture={this.handleScrollKeyDown}
+        onPointerDownCapture={this.handleScrollbarPointerDown}
       >
         {finalPinned.map(renderItem)}
         {temporaryPinned.map((conversation) =>
