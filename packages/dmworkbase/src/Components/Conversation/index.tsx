@@ -35,9 +35,9 @@ import { MessageWrap, Part, PartType } from "../../Service/Model";
 import WKApp from "../../App";
 import { RevokeCell } from "../../Messages/Revoke";
 import {
-  MAX_REEDIT_FILE_BYTES,
   canReeditRevokedMessage,
   getReeditableMessageBlocks,
+  liveFileUploadMaxBytes,
   remoteReeditFileToFile,
   restoreReeditableMessageBlocks,
 } from "../../Messages/Revoke/reeditableMessage";
@@ -393,6 +393,13 @@ const composeRecoveryStore = new ComposeRecoveryStore<ComposeRecoveryRecord>({
   dispose: disposeComposeRecoveryObjectUrls,
 });
 const composeDraftWriteQueue = new ComposeDraftWriteQueue();
+
+// 客户端自有的「同一轮附件合计」预算。与后端 file_upload_limits.max_size_kb 解耦：
+// 该字段是 per-upload-request 的单文件上限（对应 MaxBytesReader / multipart 校验，每个
+// 附件各自一个上传请求），服务端没有「整批附件累计上限」概念。因此 composer 的多附件
+// 累计检查保留为本地常量（基线值 100MB），不随运维调整该字段而变化——否则把它调小
+// （例如 20MB）会让本应放行的多附件消息被前端误拒。
+const COMPOSER_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 
 function hasSameComposeRecoveryResources(
   left: ComposeRecoveryRecord,
@@ -943,7 +950,9 @@ export class Conversation
               Toast.error(t("base.revoke.reeditAttachmentFailed"));
               return;
             }
-            await input.addAttachment([file], "paste");
+            // 走统一入口，复用黑名单 + 允许集 + 大小校验（否则恢复路径会绕过扩展名闸门）。
+            const pasteError = await this.addPendingAttachments([file], "paste");
+            if (pasteError) Toast.error(pasteError);
             return;
           }
 
@@ -956,13 +965,14 @@ export class Conversation
               t("base.revoke.reeditFileFailed", {
                 values: {
                   name: block.name,
-                  max: formatFileSize(MAX_REEDIT_FILE_BYTES),
+                  max: formatFileSize(liveFileUploadMaxBytes()),
                 },
               })
             );
             return;
           }
-          await input.addAttachment([file], "upload");
+          const uploadError = await this.addPendingAttachments([file], "upload");
+          if (uploadError) Toast.error(uploadError);
         },
         onBlockError: (block, error) => {
           console.error(
@@ -1568,6 +1578,8 @@ export class Conversation
     files: File[],
     source: "paste" | "upload" = "upload"
   ): Promise<string | null> {
+    // 本地硬编码黑名单：作为额外守门保留。即使后端下发的允许集被绕过/缓存过期，也不
+    // 放行这批最危险的可执行扩展名。命中文案沿用基线。
     const BLOCKED_EXTENSIONS = [
       "exe",
       "bat",
@@ -1588,34 +1600,71 @@ export class Conversation
     ];
     const incoming = Array.from(files);
 
-    // 检查类型黑名单
+    // 实时读取下发上限（校验发生的那一刻读 WKApp.remoteConfig，不缓存进组件 state，
+    // 避免 TOCTOU）。上游空值由 leaf 解析层逐字段回退到 100MB，故此处一定是有效值。
+    const limits = WKApp.remoteConfig.fileUploadLimits;
+    const maxFileBytes = limits.maxSizeKB * 1024;
+    const maxFileLabel = formatFileSize(maxFileBytes);
+    const allowedExtensions = limits.allowedExtensions;
+    // 本地黑名单键：沿用基线的「最后一个点之后、无点退化整名」提取，仅用于黑名单匹配。
+    const blacklistKeyOf = (name: string) =>
+      name.substring(name.lastIndexOf(".") + 1).toLowerCase();
+    // 允许集判定用「真实扩展名」：必须存在非首尾的点号；无点（Dockerfile）、前导点
+    // （.gitignore/.pdf 这类隐藏文件）、结尾点（a.）都视为「无扩展名」，直接提示不支持该
+    // 文件类型，而不是拼出一个伪造扩展名（否则 Dockerfile 会被误报成 .dockerfile）。
+    // 注意：这是刻意的客户端设计，与 Go filepath.Ext 并不完全一致——filepath.Ext 会把前导点
+    // （.gitignore → .gitignore）和结尾点（a. → .）也算作扩展名。这里对隐藏文件/结尾点更
+    // 严格，是保守方向（宁可前端多拒，不靠前端放行）；服务端仍是最终安全边界。
+    const realExtensionOf = (name: string): string | null => {
+      const dot = name.lastIndexOf(".");
+      if (dot <= 0 || dot === name.length - 1) return null;
+      return name.substring(dot + 1).toLowerCase();
+    };
+
+    // 扩展名校验：先本地黑名单，再下发允许集（权威允许集；空集 = 不限制，仅走黑名单）。
     for (const f of incoming) {
-      const ext = f.name.substring(f.name.lastIndexOf(".") + 1).toLowerCase();
-      if (BLOCKED_EXTENSIONS.includes(ext)) {
+      const blockedKey = blacklistKeyOf(f.name);
+      if (BLOCKED_EXTENSIONS.includes(blockedKey)) {
         return t("base.conversation.upload.blockedExtension", {
-          values: { extension: ext },
+          values: { extension: blockedKey },
         });
+      }
+      if (allowedExtensions.length > 0) {
+        const ext = realExtensionOf(f.name);
+        if (!ext) {
+          return t("base.conversation.upload.extensionMissing", {
+            values: { name: f.name },
+          });
+        }
+        if (!allowedExtensions.includes(`.${ext}`)) {
+          return t("base.conversation.upload.extensionNotAllowed", {
+            values: { extension: `.${ext}` },
+          });
+        }
       }
     }
 
     // 大小校验（octo-web#3173）：单入口统一拦截，按钮/粘贴/拖拽三路共用。
-    // 阈值复用既有常量 ConversationVM.MAX_TOTAL_SIZE（100MB），不另立阈值。
-    // 单文件超限：任一文件本身就超过总上限时直接拒绝。
-    const maxTotal = ConversationVM.MAX_TOTAL_SIZE;
-    const maxSizeLabel = formatFileSize(maxTotal);
-    const oversized = incoming.find((f) => f.size > maxTotal);
+    // 单文件阈值改读后端 file_upload_limits.max_size_kb（KB × 1024），字段缺失时回退 100MB。
+    const oversized = incoming.find((f) => f.size > maxFileBytes);
     if (oversized) {
       return t("base.conversation.upload.fileTooLarge", {
-        values: { name: oversized.name, max: maxSizeLabel },
+        values: { name: oversized.name, max: maxFileLabel },
       });
     }
-    // 总大小超限：本次新增 + 已在待发送队列里的累加。
+    // 同一轮附件合计：客户端自有的本地预算（COMPOSER_MAX_TOTAL_BYTES）。这里刻意不读
+    // 服务端 max_size_kb——那是 per-upload-request 的单文件上限，服务端没有「整批附件
+    // 累计上限」，绑上去会让运维调小该值时误拒本应放行的多附件消息。
+    // 但累计阈值至少要 ≥ 单文件上限：否则当运维把 max_size_kb 调到 > 100MB 时，一个已
+    // 通过单文件闸门的合法文件仍会被累计闸门单独拦下。取二者较大值——下发值 ≤ 100MB 时
+    // 与基线/现状逐字等价，> 100MB 时也不会误拒合法单文件。
+    const maxBatchBytes = Math.max(COMPOSER_MAX_TOTAL_BYTES, maxFileBytes);
     const existing = this.getPendingAttachments();
     const existingSize = existing.reduce((sum, f) => sum + f.size, 0);
     const incomingSize = incoming.reduce((sum, f) => sum + f.size, 0);
-    if (existingSize + incomingSize > maxTotal) {
+    if (existingSize + incomingSize > maxBatchBytes) {
       return t("base.conversation.upload.totalTooLarge", {
-        values: { max: maxSizeLabel },
+        values: { max: formatFileSize(maxBatchBytes) },
       });
     }
 
