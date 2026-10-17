@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import creation from './fixtures/workspaceCreated.im-test.json'
+
 import { FETCH_RULES, FETCH_IGNORE, buildFetchIndex, matchFetchEvent, rawPathname, type FetchRule } from '../FetchRules'
 
 /**
@@ -69,9 +71,11 @@ describe('FETCH_RULES — workspace creation API compatibility', () => {
     const idx = buildFetchIndex(FETCH_RULES)
 
     it('maps the current space-scoped workspace creation endpoint', () => {
-        for (const space of ['minglue_default', 'dap-selftest-space']) {
-            expect(matchFetchEvent(idx, 'POST', `/api/v1/space/${space}/projects`)).toBe('workspace_created')
-        }
+        expect(matchFetchEvent(idx, creation.method, creation.pathname)).toBe('workspace_created')
+    })
+
+    it('does not count SpaceService tenant-space creation as Loop workspace creation', () => {
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/space/create')).toBeUndefined()
     })
 
     it('retains the legacy workspace creation endpoint', () => {

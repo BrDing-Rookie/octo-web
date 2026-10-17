@@ -1,4 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import creation from './fixtures/workspaceCreated.im-test.json'
+
+// Captured business-request metadata, not a reconstructed SpaceService URL.
+// This is a hermetic wrapper regression replay, not a new live-browser test.
+
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -14,12 +19,14 @@ it('emits workspace_created once per successful same-origin creation, not failur
     const { Dap } = await import('../Dap')
     Dap.shared.setEnabled(true)
     Dap.shared.init()
-    const path = '/api/v1/space/dap-selftest/projects'
-    await fetch(`${location.origin}${path}`, { method: 'POST' })
+    const path = creation.pathname
+    await fetch(`${location.origin}${path}`, { method: creation.method })
     await fetch(`${location.origin}/fleet/api/v1/workspaces`, { method: 'POST' })
     await fetch(`${location.origin}${path}`, { method: 'GET' })
-    await fetch(`${location.origin}/api/v1/space/denied/projects`, { method: 'POST' })
-    await fetch(`${location.origin}/api/v1/space/network-failure/projects`, { method: 'POST' }).catch(() => {})
+    await fetch(`${location.origin}${path}?case=denied`, { method: 'POST' })
+    await fetch(`${location.origin}${path}?case=network-failure`, { method: 'POST' }).catch(() => {})
+    // SpaceService creates a tenant Space, not a Loop Workspace.
+    await fetch(`${location.origin}/api/v1/space/create`, { method: 'POST' })
     await fetch(`https://external.invalid${path}`, { method: 'POST' })
     Dap.shared.flush()
     await Promise.resolve()
@@ -30,6 +37,7 @@ it('emits workspace_created once per successful same-origin creation, not failur
     for (const event of events) {
         expect(event.props).toBeUndefined()
         expect(JSON.stringify(event)).not.toContain('dap-selftest')
+        expect(JSON.stringify(event)).not.toContain('minglue_default')
     }
     Dap.shared.setEnabled(false)
 })
