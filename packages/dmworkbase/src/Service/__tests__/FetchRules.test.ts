@@ -65,6 +65,27 @@ describe('FetchRules — rawPathname 只取路径(隐私:去 query / 去 origin)
     })
 })
 
+describe('FETCH_RULES — workspace creation API compatibility', () => {
+    const idx = buildFetchIndex(FETCH_RULES)
+
+    it('maps the current space-scoped workspace creation endpoint', () => {
+        for (const space of ['minglue_default', 'dap-selftest-space']) {
+            expect(matchFetchEvent(idx, 'POST', `/api/v1/space/${space}/projects`)).toBe('workspace_created')
+        }
+    })
+
+    it('retains the legacy workspace creation endpoint', () => {
+        expect(matchFetchEvent(idx, 'POST', '/fleet/api/v1/workspaces')).toBe('workspace_created')
+    })
+
+    it('does not treat listing, member changes or nested project resources as creation', () => {
+        expect(matchFetchEvent(idx, 'GET', '/api/v1/space/minglue_default/projects')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'PATCH', '/api/v1/space/minglue_default/projects')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/space/minglue_default/projects/fixture/members')).toBeUndefined()
+        expect(matchFetchEvent(idx, 'POST', '/api/v1/projects/fixture/members')).not.toBe('workspace_created')
+    })
+})
+
 describe('FETCH_RULES — 规则表不变量', () => {
     it('每条规则形状齐全(method 大写 / path 以 / 开头 / event 非空)', () => {
         for (const r of FETCH_RULES) {
